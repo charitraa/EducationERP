@@ -7,6 +7,10 @@ Django REST Framework.
 **Status: Phase 1 complete.** The identity foundation everything else depends
 on is built and tested. No business modules yet — see [Roadmap](#roadmap).
 
+New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
+organizations vs campuses, roles, and setting up a school with one campus or
+several branches.
+
 ---
 
 ## What Phase 1 delivers
@@ -129,6 +133,278 @@ Notes:
   `docker-compose.yml` to reach it with a local client.
 - With several replicas, set `RUN_MIGRATIONS=false` on all but one of them
   (or on all of them, with migrations run as a separate release step).
+
+---
+
+## How it works, in plain words
+
+This section explains the system without assuming you know Django. For the
+technical reasons behind each choice, see [Architecture](#architecture).
+
+### What is in `backend/core/`
+
+| Folder | What it does |
+|---|---|
+| `organizations/` | The **school or college** itself, and its **campuses** (branches) |
+| `accounts/` | **Users**: everyone who can log in (students, teachers, staff, admins) |
+| `permissions/` | **Roles** and **permissions**: who is allowed to do what |
+| `authentication/` | **Login, logout and tokens** |
+| `audit/` | **History**: who did what, and when |
+| `common/` | Shared tools used by all of the above: base models, permission checks, error format, health checks |
+
+### The main models
+
+```
+Organization  (one school / college)
+   │
+   ├── Campus        (its branches: "Main Campus", "Lalitpur Campus")
+   │
+   ├── User          (every person who logs in)
+   │     │
+   │     └── UserRole ──► Role ──► Permission
+   │         (link)      (group)   (one allowed action, e.g. "users.create")
+   │
+   └── AuditLog      (every change and every login)
+```
+
+- **Organization**: name, code, type (school / college / university / institute).
+- **Campus**: a branch of one organization. One campus is marked as the main campus.
+- **User**: logs in with email and password and belongs to one organization.
+  `user_type` (student, teacher, staff…) is only a label. **It does not give
+  access. Roles do.**
+- **Permission**: one small action, written `module.action`, for example
+  `campuses.view` or `users.create`. They are defined in code and loaded with
+  `manage.py sync_permissions`.
+- **Role**: a named group of permissions. Built in: `org-admin` (everything),
+  `campus-admin` (manage users and campuses), `staff` (read-only basics),
+  `student` and `parent` (empty until later phases add to them). Each
+  organization can also create its own roles.
+- **UserRole**: gives a role to a user, either for the whole organization or
+  for one campus, optionally with an expiry date.
+- **AuditLog**: who did it, what they did, what changed (old → new), IP address
+  and time. Log entries can never be edited.
+
+Deleting something is a **soft delete**: the record is hidden and marked
+`deleted_at`, not removed, so history stays whole.
+
+### Organization vs campus: why both?
+
+They are two different levels:
+
+- **Organization** is the institution. It owns all its data and is completely
+  separated from other institutions.
+- **Campus** is one location of that institution. One organization can have
+  many campuses.
+
+**Example: one college with three branches**
+
+```
+Kathmandu Model College          ← Organization
+   ├── Baneshwor Campus (main)   ← Campus
+   ├── Lalitpur Campus           ← Campus
+   └── Bhaktapur Campus          ← Campus
+```
+
+- **Shared by the whole college:** one fee policy, one grading system, and a
+  principal in charge of all branches. A student who moves from Lalitpur to
+  Bhaktapur keeps the same login and history.
+- **Different at each branch:** rooms, timetables, attendance, and a local
+  branch head who should manage only their own branch.
+
+**Example: two separate colleges on the same server**
+
+```
+Organization A: Kathmandu Model College      Organization B: Pokhara Engineering College
+   ├── Baneshwor Campus                         └── Main Campus
+   └── Lalitpur Campus
+```
+
+College A can **never** see College B's data. The organization is a hard wall
+between institutions. A campus is a soft division inside one institution.
+
+**Example: a school with only one building**
+
+```
+Sunrise Secondary School      ← Organization
+   └── Main Campus (main)     ← created automatically
+```
+
+This is the normal case. The campus exists but stays invisible in practice.
+Roles are given with no campus, and a frontend can hide the campus picker.
+Every school has the same shape, so later modules can always say "this room
+belongs to a campus". If the school opens a second branch, you just add a
+campus; old data stays on Main Campus and nothing has to be moved.
+
+### Who can do what: roles in practice
+
+| Person | Role | Given for | Can manage |
+|---|---|---|---|
+| Principal | `org-admin` | whole organization | everything, all branches |
+| Ram, Lalitpur head | `campus-admin` | Lalitpur Campus | users and campus settings (see [Known gaps](#known-gaps)) |
+| Accountant | `staff` | whole organization | read-only basics |
+| A student | `student` | their campus | nothing yet: Phase 2+ adds student features |
+
+A role given **without** a campus counts everywhere in the organization. A role
+given **with** a campus is meant to count only there.
+
+### Setting up a school
+
+#### Step 0: once per server
+
+```bash
+python manage.py migrate            # create the tables
+python manage.py sync_permissions   # load permissions and built-in roles
+```
+
+With Docker, both run automatically every time the container starts.
+
+#### The `bootstrap_organization` command
+
+This adds a new school or college. It solves a chicken-and-egg problem: the API
+needs a logged-in admin, but a new school has no users yet. This command creates
+the first admin from the server terminal, and after that everything is done
+through the API.
+
+It creates three things at once, and if any step fails none of them is saved:
+
+1. the **organization**
+2. its first **campus**, marked as main
+3. an **admin user** with the `org-admin` role
+
+| Option | Required | Default | Meaning |
+|---|---|---|---|
+| `--name` | yes | none | School or college name |
+| `--code` | yes | none | Short unique id, e.g. `sunrise` |
+| `--type` | no | `college` | `school`, `college`, `university`, `institute`, `other` |
+| `--campus-name` | no | `Main Campus` | Name of the first campus |
+| `--campus-code` | no | `main` | Code of the first campus |
+| `--admin-email` | yes | none | Login email of the first admin |
+| `--admin-password` | no | random | If omitted, a strong password is generated and **printed once**. Save it. |
+
+It stops with an error if the code is already taken, or if `sync_permissions`
+has not been run yet.
+
+With Docker, run it inside the container:
+
+```bash
+docker compose --env-file ./backend/.env exec backend python manage.py bootstrap_organization ...
+```
+
+#### A school with one campus
+
+```bash
+python manage.py bootstrap_organization \
+    --name "Sunrise Secondary School" --code sunrise --type school \
+    --admin-email principal@sunrise.edu
+```
+
+That is all. The principal can now log in and add staff and students.
+
+#### A college with several branches
+
+Run `bootstrap_organization` **once** for the whole college. Name the first
+campus after your head branch:
+
+```bash
+python manage.py bootstrap_organization \
+    --name "Kathmandu Model College" --code kmc --type college \
+    --campus-name "Baneshwor Campus" --campus-code baneshwor \
+    --admin-email principal@kmc.edu
+```
+
+Then the principal adds the other branches through the API:
+
+```bash
+# 1. Log in. Copy "access" from the response.
+curl -X POST http://localhost:8000/api/v1/auth/login/ \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "principal@kmc.edu", "password": "..."}'
+
+TOKEN=<access token>
+
+# 2. Add branches. The organization is taken from your login, never from the body.
+curl -X POST http://localhost:8000/api/v1/campuses/ \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name": "Lalitpur Campus", "code": "lalitpur", "city": "Lalitpur"}'
+
+curl -X POST http://localhost:8000/api/v1/campuses/ \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name": "Bhaktapur Campus", "code": "bhaktapur", "city": "Bhaktapur"}'
+```
+
+Then add a head for each branch, and give them `campus-admin` **for their
+branch only**:
+
+```bash
+# 3. Create the user. Note the "id" in the response.
+curl -X POST http://localhost:8000/api/v1/users/ \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"email": "ram@kmc.edu", "first_name": "Ram", "user_type": "staff", "password": "..."}'
+
+# 4. Find the ids you need.
+curl "http://localhost:8000/api/v1/roles/?search=campus-admin" -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:8000/api/v1/campuses/?search=lalitpur"  -H "Authorization: Bearer $TOKEN"
+
+# 5. Give the role for that campus.
+curl -X POST http://localhost:8000/api/v1/users/<ram_id>/assign-role/ \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"role": <campus_admin_role_id>, "campus": <lalitpur_campus_id>}'
+```
+
+Leave out `"campus"` to give a role for the whole organization. Add
+`"expires_at"` for a temporary role. Everything above can also be done from the
+interactive docs page at `/api/docs/`.
+
+**Adding a campus needs no migration.** Migrations change the *shape* of the
+database (new tables or columns) and only happen when the code changes. A new
+campus, user or role is just a new row.
+
+| | One campus | Several branches |
+|---|---|---|
+| `bootstrap_organization` | once | once |
+| Extra campuses | none | `POST /api/v1/campuses/` per branch |
+| Roles | given with no campus | branch heads get a role **with** their campus |
+| Migrations | none | none |
+
+### What happens on every API request
+
+```
+Client sends:  Authorization: Bearer <access token>
+        │
+        ▼
+ ① Who are you?    The token is checked and the user is found
+        ▼
+ ② Allowed?        user → roles → permissions.
+                   Does the user hold the code this endpoint needs
+                   (e.g. "campuses.create")?  No → 403
+        ▼
+ ③ Your data only  Results are filtered to the user's own organization.
+                   Another organization's record returns 404, as if it did not exist
+        ▼
+ ④ Do the work     The view calls a service function, where the rules live
+        ▼
+ ⑤ Record it       Every create / update / delete is written to the audit log
+        ▼
+ JSON response.  Errors always look like {"error": {"code", "message", "details"}}
+```
+
+**Login:** `POST /auth/login/` returns an **access** token (valid 60 minutes),
+a **refresh** token (7 days) and the user's roles and permissions. When the
+access token expires, `POST /auth/refresh/` returns a new one.
+`POST /auth/logout/` blocks the refresh token. Logins are limited to 10 tries a
+minute, and every login, failed login and logout is written to the audit log.
+
+### Known gaps
+
+Fix these before a real multi-branch institution goes live:
+
+- **Campus roles are not limited to their campus yet.** A `campus-admin` for
+  Lalitpur can currently also manage Baneshwor and Bhaktapur. The permission
+  check does not know which campus a request is about, so it counts every role
+  the user holds. Single-campus schools are not affected.
+- **More than one campus can be marked as main.** Keep `is_main` on only one.
+- **`bootstrap_organization --type` is not validated**, so a typo such as
+  `--type skool` is saved as-is.
 
 ---
 
