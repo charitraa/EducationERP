@@ -115,7 +115,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 266 tests, in-memory SQLite
+python manage.py test          # 303 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -447,8 +447,41 @@ Client sends:  Authorization: Bearer <access token>
 **Login:** `POST /auth/login/` returns an **access** token (valid 60 minutes),
 a **refresh** token (7 days) and the user's roles and permissions. When the
 access token expires, `POST /auth/refresh/` returns a new one.
-`POST /auth/logout/` blocks the refresh token. Logins are limited to 10 tries a
-minute, and every login, failed login and logout is written to the audit log.
+`POST /auth/logout/` blocks the refresh token. Every login, failed login and
+logout is written to the audit log.
+
+### Security
+
+| Protection | What it does | Setting |
+|---|---|---|
+| Login rate limit | 10 login attempts a minute per client address | `THROTTLE_LOGIN` |
+| Account lockout | 5 failures on one account, from any address, lock it for 15 minutes. The right password is refused too. Unknown emails lock the same way, so nothing is revealed | `LOGIN_LOCKOUT_ATTEMPTS`, `LOGIN_LOCKOUT_MINUTES` |
+| API rate limit | 60 requests/min per address when logged out, 600/min per user when logged in. `/health/` and `/ready/` are exempt | `THROTTLE_ANON`, `THROTTLE_USER` |
+| Two-factor login | Optional authenticator-app codes, with 10 single-use recovery codes. Also asked for at `/admin/` | `/auth/2fa/…` endpoints below |
+| Admin login | Same lockout and two-factor step as the API | — |
+| Client IP | `X-Forwarded-For` is trusted only for the proxies you declare, so clients can't fake their address to dodge limits or pollute the audit log | `NUM_PROXIES` |
+| Secret key | Production refuses to start on a missing, short or placeholder `SECRET_KEY` | `SECRET_KEY` |
+| API docs | Staff-only in production (log in at `/admin/` first) | `API_DOCS_PUBLIC` |
+| Content-Security-Policy | Enforced in production, report-only in development. Docs files are served by us, not a CDN | `CSP_POLICY` in `base.py` |
+| HTTPS | HSTS, HTTPS redirect, secure cookies, no framing, no-sniff. `manage.py check --deploy` passes | `SECURE_*` |
+| Dependencies | `pip-audit -r requirements.txt` checks packages against known vulnerabilities | — |
+
+**Setting `NUM_PROXIES` correctly matters.** It is the number of proxies (load
+balancer, nginx) between the internet and the app. Use `0` when clients connect
+directly, as on a laptop or with the Docker stack as shipped. If it is higher
+than the real number, clients can fake their IP again.
+
+**Turning on two-factor login** (for a frontend to build):
+
+1. `POST /auth/2fa/setup/` with `{"password": …}` returns `otpauth_uri`. Show it as a QR code.
+2. The user scans it and sends a code: `POST /auth/2fa/confirm/` with `{"code": "123456"}`.
+   The response has 10 recovery codes. Show them once.
+3. From then on, `POST /auth/login/` needs `"otp"` too. Without it the answer
+   is `400 otp_required`, so ask for the code and send everything again.
+
+A lost phone: log in with a recovery code, or an admin calls
+`POST /users/{id}/reset-2fa/` (same rule as a password reset: only for users
+no more powerful than the admin).
 
 ### Known gaps
 
@@ -461,6 +494,11 @@ minute, and every login, failed login and logout is written to the audit log.
   can come once institutions agree on a format.
 - **Admissions are recorded by staff.** There is no public application form
   yet. That arrives with the Applications phase.
+- **Two-factor is optional.** Nothing forces admins to turn it on yet. The
+  authenticator secret is stored readable in the database, as TOTP needs it
+  to check codes; encrypting it at rest would need a separate key.
+- **File uploads** don't exist yet. Size, type and access checks come with
+  the first module that stores documents or photos.
 
 ---
 
@@ -473,6 +511,11 @@ POST   /api/v1/auth/logout/                blacklist a refresh token
 GET    /api/v1/auth/me/                    current user, roles, permissions
 PATCH  /api/v1/auth/me/                    update own contact details
 POST   /api/v1/auth/change-password/
+GET    /api/v1/auth/2fa/                   two-factor status
+POST   /api/v1/auth/2fa/setup/             {password} -> secret + otpauth URI
+POST   /api/v1/auth/2fa/confirm/           {code} -> turns it on, returns recovery codes
+POST   /api/v1/auth/2fa/recovery-codes/    {code} -> new set of recovery codes
+POST   /api/v1/auth/2fa/disable/           {password, code}
 
 GET    /api/v1/organizations/              view/update own; create/delete: platform superuser only
 GET    /api/v1/campuses/                   CRUD (tenant- and campus-scoped)
@@ -483,6 +526,7 @@ POST   /api/v1/users/{id}/assign-role/
 POST   /api/v1/users/{id}/revoke-role/
 POST   /api/v1/users/{id}/set-password/
 POST   /api/v1/users/{id}/deactivate/
+POST   /api/v1/users/{id}/reset-2fa/       turn off a user's two-factor (lost phone)
 
 GET    /api/v1/permissions/                read-only catalogue
 GET    /api/v1/roles/                      CRUD (system roles are read-only)
@@ -512,7 +556,7 @@ POST   /api/v1/admissions/{id}/enroll/     creates the student (+ guardian)
 
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
-GET    /api/schema/  /api/docs/  /api/redoc/
+GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
 ```
 
 Every error uses one envelope:
