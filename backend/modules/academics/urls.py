@@ -13,5 +13,6 @@ router.register("rooms", views.RoomViewSet, basename="room")
 router.register("batches", views.BatchViewSet, basename="batch")
 router.register("sections", views.SectionViewSet, basename="section")
 router.register("teaching-assignments", views.TeachingAssignmentViewSet, basename="teaching-assignment")
+router.register("student-electives", views.StudentElectiveViewSet, basename="student-elective")
 
 urlpatterns = router.urls

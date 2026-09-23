@@ -1,6 +1,6 @@
 from django.db import transaction
 from django.db.models import Count, Q
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -11,6 +11,7 @@ from core.common.exceptions import ConflictError
 from core.common.mixins import CampusScopedViewSet, OrganizationScopedViewSet
 from modules.students.models import Enrollment
 from modules.students.selectors import students_in_section
+from modules.students.services import promote_section
 
 from .models import (
     AcademicYear,
@@ -20,19 +21,23 @@ from .models import (
     Program,
     Room,
     Section,
+    StudentElective,
     Subject,
     TeachingAssignment,
     Term,
 )
+from .selectors import students_taking
 from .serializers import (
     AcademicYearSerializer,
     BatchSerializer,
     CurriculumSubjectSerializer,
     DepartmentSerializer,
     ProgramSerializer,
+    PromoteSectionSerializer,
     RoomSerializer,
     SectionSerializer,
     SectionStudentSerializer,
+    StudentElectiveSerializer,
     SubjectSerializer,
     TeachingAssignmentSerializer,
     TermSerializer,
@@ -186,6 +191,7 @@ class TermViewSet(AcademicsViewSet):
     filterset_fields = ["academic_year"]
     ordering_fields = ["sequence", "start_date"]
     required_permissions = _perms(STRUCTURE)
+    in_use = {"timetable_entries": "timetable entries"}
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +205,7 @@ class RoomViewSet(CampusAcademicsViewSet):
     search_fields = ["code", "name", "building"]
     ordering_fields = ["code", "name", "capacity"]
     required_permissions = _perms(CLASSES)
+    in_use = {"timetable_entries": "timetable entries"}
 
 
 @_schema("academics", "batch")
@@ -226,17 +233,40 @@ class SectionViewSet(CampusAcademicsViewSet):
     search_fields = ["name", "program__name"]
     ordering_fields = ["level", "name"]
     ordering = ["program__name", "level", "name", "pk"]
-    required_permissions = _perms(CLASSES, students=[VIEW, "students.view"])
+    required_permissions = _perms(CLASSES, students=[VIEW, "students.view"],
+                                  promote=["students.place"])
     in_use = {"enrollments": "student placements (current or past)",
               "teaching_assignments": "teaching assignments"}
 
     @extend_schema(tags=["academics"], summary="Students currently in a section",
+                   parameters=[OpenApiParameter("subject", int, description=(
+                       "Only students who take this subject: everyone for a compulsory "
+                       "subject, those who chose it for an elective."))],
                    responses={200: SectionStudentSerializer(many=True)})
     @action(detail=True, methods=["get"])
     def students(self, request, pk=None):
         section = self.get_object()
-        students = students_in_section(section).order_by("first_name", "last_name")
+        subject = request.query_params.get("subject")
+        if subject is not None:
+            if not subject.isdigit():
+                raise ValidationError({"subject": "Must be a subject id."})
+            students = students_taking(section, int(subject))
+        else:
+            students = students_in_section(section)
+        students = students.order_by("first_name", "last_name")
         return Response(SectionStudentSerializer(students, many=True).data)
+
+    @extend_schema(tags=["academics"], summary="Move a whole class to another section",
+                   description="End-of-year promotion, or merging sections. All or nothing: "
+                               "if any student can't move, nobody does (409 promotion_failed).",
+                   request=PromoteSectionSerializer, responses={200: SectionStudentSerializer(many=True)})
+    @action(detail=True, methods=["post"])
+    def promote(self, request, pk=None):
+        section = self.get_object()
+        serializer = PromoteSectionSerializer(data=request.data, context={"section": section})
+        serializer.is_valid(raise_exception=True)
+        moved = promote_section(section=section, by=request.user, **serializer.validated_data)
+        return Response(SectionStudentSerializer(moved, many=True).data)
 
 
 @_schema("academics", "teaching assignment")
@@ -249,6 +279,7 @@ class TeachingAssignmentViewSet(CampusAcademicsViewSet):
     filterset_fields = ["section", "subject", "teacher", "section__academic_year"]
     ordering_fields = ["section", "subject"]
     required_permissions = _perms(CLASSES)
+    in_use = {"timetable_entries": "timetable entries"}
 
     def campus_of(self, validated_data):
         section = validated_data.get("section")
@@ -258,4 +289,57 @@ class TeachingAssignmentViewSet(CampusAcademicsViewSet):
         if "section" in serializer.validated_data and \
                 serializer.validated_data["section"].pk != serializer.instance.section_id:
             raise ValidationError({"section": "Create a new assignment for another section."})
+        if "teacher" in serializer.validated_data and \
+                serializer.validated_data["teacher"].pk != serializer.instance.teacher_id and \
+                serializer.instance.timetable_entries.exists():
+            # The new teacher's week was never checked for clashes. Create an
+            # assignment for them and move the lessons, which checks each one.
+            raise ValidationError({"teacher": "Cannot change: this assignment is on the timetable. "
+                                              "Create a new assignment and move its lessons."})
         super().perform_update(serializer)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["academics"], summary="List students' elective choices"),
+    retrieve=extend_schema(tags=["academics"], summary="Retrieve an elective choice"),
+    create=extend_schema(tags=["academics"], summary="Record that a student takes an elective"),
+    destroy=extend_schema(tags=["academics"], summary="Remove an elective choice"),
+)
+class StudentElectiveViewSet(CampusAcademicsViewSet):
+    """Which elective each student takes in their current class. Filter with
+    ``?section=`` or ``?student=``; ``?current=true`` hides earlier classes."""
+
+    http_method_names = ["get", "post", "delete", "head", "options"]
+    queryset = StudentElective.objects.select_related(
+        "enrollment__student", "enrollment__section__program", "subject"
+    )
+    serializer_class = StudentElectiveSerializer
+    campus_field = "enrollment__campus"
+    filterset_fields = {"enrollment__section": ["exact"], "enrollment__student": ["exact"],
+                        "subject": ["exact"], "enrollment__status": ["exact"]}
+    ordering_fields = ["created_at"]
+    required_permissions = {
+        "list": [VIEW, "students.view"], "retrieve": [VIEW, "students.view"],
+        "create": ["students.place"], "destroy": ["students.place"],
+    }
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+        # Friendlier names for the two filters everyone uses.
+        if params.get("section", "").isdigit():
+            qs = qs.filter(enrollment__section_id=params["section"])
+        if params.get("student", "").isdigit():
+            qs = qs.filter(enrollment__student_id=params["student"])
+        if params.get("current") == "true":
+            qs = qs.filter(enrollment__status=Enrollment.Status.ACTIVE)
+        return qs
+
+    def campus_of(self, validated_data):
+        return validated_data["enrollment"].campus_id
+
+    def perform_destroy(self, instance):
+        if instance.enrollment.status != Enrollment.Status.ACTIVE:
+            raise ConflictError("Choices of an earlier class are history and can't be removed.",
+                                code="history")
+        super().perform_destroy(instance)

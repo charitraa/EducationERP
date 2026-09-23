@@ -4,10 +4,11 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 3a complete.** Identity (Phase 1), the student foundation
-(Phase 2) and the academic structure (Phase 3a: programs, subjects, curriculum,
-academic years, sections, teaching assignments, student placement) are built
-and tested. Next is Phase 3b, the timetable — see [Roadmap](#roadmap).
+**Status: Phase 3 complete.** Identity (Phase 1), the student foundation
+(Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
+academic years, sections, teaching assignments, student placement) and the
+weekly timetable with clash detection (Phase 3b) are built and tested. Next is
+Phase 4, attendance — see [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -58,6 +59,30 @@ class group at one level, for one academic year, at one campus.
 
 Year names are free text, so `2082/83` works; dates are stored in AD.
 Details: [`docs/phase-3.md`](docs/phase-3.md).
+
+## What Phase 3b delivers
+
+| Module | Models | What it does |
+|---|---|---|
+| `modules/timetable/` | `BellSchedule`, `Period`, `TimetableEntry` | Each campus's bell times (several shifts allowed); the weekly timetable of teaching assignments, all year or per term |
+
+A write that would double-book a **teacher** (at any campus), a **room** or a
+**section** is refused with `409 timetable_clash` and a list of what it hit.
+Overlap is by clock time, so a morning and a day shift are checked against
+each other. Elective subjects of one section may run in parallel.
+
+Also in Phase 3:
+
+- **Combined classes**: one teacher, several sections, one room.
+- **Hand-over**: move a teacher's lessons to another teacher in one call.
+- **Lesson changes**: substitutes, room changes and cancellations on a date,
+  and a day view with them applied.
+- **`/timetable/me/`**: the timetable for teachers, students and parents.
+- **Timetable generator**: fills the week from each assignment's
+  `periods_per_week`.
+- **Student electives**, and **whole-class promotion**.
+
+Details: [`docs/phase-3b.md`](docs/phase-3b.md) and [`docs/phase-3.md`](docs/phase-3.md).
 
 ---
 
@@ -131,7 +156,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 354 tests, in-memory SQLite
+python manage.py test          # 453 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -573,8 +598,20 @@ POST   /api/v1/admissions/{id}/enroll/     creates the student (+ guardian)
 GET    /api/v1/departments/  programs/  subjects/  curriculum/      CRUD (organization-wide)
 GET    /api/v1/academic-years/  terms/                              CRUD; POST academic-years/{id}/set-current/
 GET    /api/v1/rooms/  batches/  sections/  teaching-assignments/   CRUD (campus-scoped)
-GET    /api/v1/sections/{id}/students/                              who is in a class
+GET    /api/v1/sections/{id}/students/                              who is in a class (?subject= who takes it)
+POST   /api/v1/sections/{id}/promote/                               move a whole class (all or nothing)
+GET    /api/v1/student-electives/                                   CRUD (no edit): who takes which elective
 POST   /api/v1/students/{id}/place/                                 place / promote / move a student
+
+GET    /api/v1/bell-schedules/  periods/                            CRUD (campus-scoped)
+GET    /api/v1/timetable/                                           CRUD (campus-scoped); 409 on clashes
+GET    /api/v1/timetable/?section=|teacher=|room=                   one class's, teacher's or room's week
+GET    /api/v1/timetable/?date=YYYY-MM-DD                           the lessons of one day
+GET    /api/v1/timetable/day/?date=                                 one day with substitutes, room changes, cancellations
+GET    /api/v1/timetable/me/                                        own timetable (teacher, student or parent)
+POST   /api/v1/timetable/hand-over/                                 give lessons to another teacher
+POST   /api/v1/timetable/generate/                                  fill the week automatically (dry run by default)
+GET    /api/v1/lesson-changes/                                      CRUD: one lesson on one date
 
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
@@ -606,8 +643,10 @@ backend/
 │   ├── parents/       Parent, StudentParent
 │   ├── staff/         StaffMember
 │   ├── admissions/    Admission
-│   └── academics/     Department, Program, Subject, curriculum, years, terms,
-│                      Room, Batch, Section, TeachingAssignment
+│   ├── academics/     Department, Program, Subject, curriculum, years, terms,
+│   │                  Room, Batch, Section, TeachingAssignment
+│   └── timetable/     BellSchedule, Period, TimetableEntry, LessonChange,
+│                      clash detection, generator
 ├── integrations/      biometric, payment, SMS, email, push (empty)
 └── tests/             shared factories, base test case, cross-cutting tests
 ```
@@ -672,7 +711,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1, 2 and 3a are done. The order below is the **dependency order**: each
+Phases 1, 2 and 3 are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -681,8 +720,8 @@ placeholders.
 | ~~1~~ | Identity: organizations, campuses, users, roles, permissions, audit | — |
 | ~~2~~ | Students, parents, staff, admissions, enrollment | 1 |
 | ~~3a~~ | Academics: departments, programs, subjects, curriculum, years, terms, batches, sections, rooms, teaching assignments, placement | 2 (teachers, enrollment) |
-| **3b** | Timetable: periods, weekly schedule, clash detection | 3a |
-| 4 | Attendance: one engine for manual / QR / biometric | 3 (a class and timetable to take attendance in) |
+| ~~3b~~ | Timetable: periods, weekly schedule, clash detection | 3a |
+| **4** | Attendance: one engine for manual / QR / biometric | 3 (a class and timetable to take attendance in) |
 | 5 | Examinations: exams, marks, grades, results, transcripts | 3 (subjects, syllabus) |
 | 6 | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
 | 7 | Events and student points | 2 |
@@ -693,6 +732,6 @@ placeholders.
 | 13 | Applications (public admission forms and other workflows) | 2 |
 | 14 | Alumni and careers (uses the graduated status) | 2 |
 
-See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md) and
-[`docs/phase-3.md`](docs/phase-3.md) for the data model and the conventions
+See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
+[`docs/phase-3.md`](docs/phase-3.md) and [`docs/phase-3b.md`](docs/phase-3b.md) for the data model and the conventions
 every module follows.

@@ -19,4 +19,5 @@ urlpatterns = [
     path("", include("modules.admissions.urls")),
     # Phase 3
     path("", include("modules.academics.urls")),
+    path("", include("modules.timetable.urls")),
 ]

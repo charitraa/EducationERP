@@ -7,6 +7,7 @@ from core.common.serializers import (
 )
 from core.organizations.models import Campus
 from modules.staff.models import StaffMember
+from modules.students.models import Enrollment, Student
 
 from .models import (
     AcademicYear,
@@ -16,6 +17,7 @@ from .models import (
     Program,
     Room,
     Section,
+    StudentElective,
     Subject,
     TeachingAssignment,
     Term,
@@ -364,6 +366,16 @@ class SectionSerializer(TenantSerializer):
                     raise serializers.ValidationError(
                         {field: "Cannot change: students have been placed in this section."}
                     )
+            # Its lessons use that campus's periods and rooms.
+            for field in ("academic_year", "campus"):
+                if field in attrs and attrs[field] != getattr(self.instance, field) \
+                        and self.instance.teaching_assignments.filter(
+                            timetable_entries__isnull=False,
+                            timetable_entries__deleted_at__isnull=True,
+                        ).exists():
+                    raise serializers.ValidationError(
+                        {field: "Cannot change: this section has lessons on the timetable."}
+                    )
 
         if not program.has_level(level):
             raise serializers.ValidationError(
@@ -401,8 +413,9 @@ class TeachingAssignmentSerializer(TenantSerializer):
     class Meta:
         model = TeachingAssignment
         fields = ["id", "section", "section_name", "subject", "subject_name", "teacher",
-                  "teacher_name", "created_at"]
+                  "teacher_name", "periods_per_week", "created_at"]
         read_only_fields = ["id", "created_at"]
+        extra_kwargs = {"periods_per_week": {"min_value": 1, "max_value": 60}}
 
     def validate_section(self, section):
         return self.own(section, "section")
@@ -440,3 +453,113 @@ class SectionStudentSerializer(serializers.Serializer):
     student_number = serializers.CharField()
     full_name = serializers.CharField()
     status = serializers.CharField()
+
+
+class StudentElectiveSerializer(TenantSerializer):
+    """Record that a student takes an elective in the class they're in now.
+
+    Written with ``student``; stored against their open enrollment, so the
+    choice stays with that class in their history."""
+
+    student = serializers.PrimaryKeyRelatedField(
+        queryset=Student.objects.all(), write_only=True, help_text="Uses the student's current class."
+    )
+    subject = serializers.PrimaryKeyRelatedField(queryset=Subject.objects.all())
+    student_id = serializers.IntegerField(source="enrollment.student_id", read_only=True)
+    student_name = serializers.CharField(source="enrollment.student.full_name", read_only=True)
+    student_number = serializers.CharField(source="enrollment.student.student_number", read_only=True)
+    section = serializers.IntegerField(source="enrollment.section_id", read_only=True)
+    section_name = serializers.CharField(source="enrollment.section.display_name", read_only=True)
+    subject_name = serializers.CharField(source="subject.name", read_only=True)
+
+    class Meta:
+        model = StudentElective
+        fields = ["id", "student", "student_id", "student_name", "student_number", "enrollment",
+                  "section", "section_name", "subject", "subject_name", "created_at"]
+        read_only_fields = ["id", "enrollment", "created_at"]
+
+    def validate_student(self, student):
+        return self.own(student, "student")
+
+    def validate_subject(self, subject):
+        return self.own(subject, "subject")
+
+    def validate(self, attrs):
+        enrollment = (
+            attrs.pop("student").enrollments.filter(status=Enrollment.Status.ACTIVE)
+            .select_related("section__program").first()
+        )
+        if enrollment is None or enrollment.section is None:
+            raise serializers.ValidationError({"student": "The student isn't placed in a class."})
+        section, subject = enrollment.section, attrs["subject"]
+        if not CurriculumSubject.objects.filter(
+            program_id=section.program_id, level=section.level, subject=subject, is_elective=True
+        ).exists():
+            raise serializers.ValidationError(
+                {"subject": f"{subject.name} is not an elective for {section.display_name} "
+                            f"of {section.program.name}."}
+            )
+        if enrollment.electives.filter(subject=subject).exists():
+            raise serializers.ValidationError({"subject": "The student already takes this subject."})
+
+        taken = list(enrollment.electives.values_list("subject_id", flat=True))
+        clash = _parallel_lesson(section, subject.pk, taken)
+        if clash is not None:
+            raise serializers.ValidationError(
+                {"subject": f"{subject.name} is taught at the same time as {clash}, "
+                            f"which the student already takes."}
+            )
+        attrs["enrollment"] = enrollment
+        return attrs
+
+
+def _parallel_lesson(section, subject_id, other_subject_ids):
+    """The name of another of these subjects whose lessons in ``section``
+    meet at the same time as ``subject_id``'s, if any.
+
+    Reads the timetable through ``TeachingAssignment.timetable_entries`` so
+    academics doesn't import the timetable module that builds on it."""
+    if not other_subject_ids:
+        return None
+    rows = list(
+        TeachingAssignment.objects.filter(
+            section=section, subject_id__in=[subject_id, *other_subject_ids],
+            timetable_entries__isnull=False, timetable_entries__deleted_at__isnull=True,
+        ).values(
+            "subject_id", "subject__name", "timetable_entries__day_of_week",
+            "timetable_entries__term_id", "timetable_entries__period__start_time",
+            "timetable_entries__period__end_time",
+        )
+    )
+    mine = [r for r in rows if r["subject_id"] == subject_id]
+    others = [r for r in rows if r["subject_id"] != subject_id]
+    for a in mine:
+        for b in others:
+            same_day = a["timetable_entries__day_of_week"] == b["timetable_entries__day_of_week"]
+            terms = (a["timetable_entries__term_id"], b["timetable_entries__term_id"])
+            same_term = None in terms or terms[0] == terms[1]
+            overlap = (a["timetable_entries__period__start_time"] < b["timetable_entries__period__end_time"]
+                       and b["timetable_entries__period__start_time"] < a["timetable_entries__period__end_time"])
+            if same_day and same_term and overlap:
+                return b["subject__name"]
+    return None
+
+
+class PromoteSectionSerializer(serializers.Serializer):
+    to_section = serializers.PrimaryKeyRelatedField(queryset=Section.objects.all())
+    exclude = serializers.ListField(
+        child=serializers.IntegerField(), required=False, default=list,
+        help_text="Ids of students who stay behind (held back, or placed separately).",
+    )
+    on_date = serializers.DateField(required=False, help_text="When the move takes effect. Default: today.")
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=255, default="")
+
+    def validate_to_section(self, section):
+        source = self.context["section"]
+        if section.organization_id != source.organization_id:
+            raise serializers.ValidationError("Unknown section.")
+        if section.pk == source.pk:
+            raise serializers.ValidationError("Choose another section.")
+        if section.campus_id != source.campus_id:
+            raise serializers.ValidationError("The section is at another campus.")
+        return section

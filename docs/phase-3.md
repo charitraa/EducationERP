@@ -1,7 +1,9 @@
 # Phase 3a — Academic Structure
 
 What is taught, when, where and to which groups, and which group each
-student is in. Phase 3b (next) adds the timetable on top of this.
+student is in. It also records students' electives and promotes whole
+classes. Phase 3b adds the timetable on top of this: see
+[`phase-3b.md`](phase-3b.md).
 
 Follows the conventions in [`phase-1.md`](phase-1.md) and
 [`phase-2.md`](phase-2.md).
@@ -129,6 +131,8 @@ by `section.campus`.
 /api/v1/sections/               CRUD   campus-scoped; GET {id}/students/; student_count
 /api/v1/teaching-assignments/   CRUD   campus-scoped; ?section= ?teacher= ?subject=
 /api/v1/students/{id}/place/    POST
+/api/v1/sections/{id}/promote/  POST   whole class
+/api/v1/student-electives/      GET POST DELETE
 ```
 
 ---
@@ -143,11 +147,46 @@ regardless of row count.
 
 ---
 
-## Not in 3a
+## Electives per student
 
-- **Timetable** (periods, weekly schedule, clash detection for teacher, room
-  and section) is Phase 3b, next.
-- **Bulk promotion** (move a whole section to next year's section in one call)
-  is a natural follow-up. Today placement is per student.
-- **Electives per student.** Curriculum marks subjects as elective, but which
-  student takes which elective isn't recorded yet. Exams (Phase 5) will need it.
+`StudentElective` records which elective a student takes. It belongs to the
+student's **enrollment** (one stay in one section), so each class keeps its
+own choices in the student's history. Compulsory subjects aren't recorded,
+because every student of the section takes them.
+
+```
+POST   /api/v1/student-electives/  {"student", "subject"}   uses the student's current class
+GET    /api/v1/student-electives/?section=&student=&subject=&current=true
+DELETE /api/v1/student-electives/{id}/                       current class only; earlier ones are history (409)
+GET    /api/v1/sections/{id}/students/?subject=<id>          who takes a subject
+```
+
+Rules:
+
+- The subject must be an elective at the student's level and program.
+- The student must be placed in a class.
+- No duplicates.
+- A student can't take two electives whose lessons meet at the same time.
+- A move within the same level (11 A → 11 B) keeps the choices. A
+  promotion (Grade 11 → 12) starts afresh, because the next level has its
+  own curriculum.
+- Writes need `students.place`. Reads need `academics.view` and
+  `students.view`. Campus-scoped by the enrollment's campus.
+
+## Whole-class promotion
+
+`POST /api/v1/sections/{id}/promote/ {"to_section", "exclude"?, "on_date"?, "reason"?}`
+moves everyone in a section to another section at the same campus. Use it
+for end-of-year promotion, or to merge two sections. `exclude` lists
+students who stay behind.
+
+Each student goes through the same `place_student` rules. The move is all
+or nothing: if any student can't be moved, nobody is. The response is
+409 `promotion_failed`, with `details.students` listing each student who
+failed and why. Needs `students.place`.
+
+## Weekly lessons per assignment
+
+`TeachingAssignment.periods_per_week` (optional, 1–60) says how many lessons
+a week an assignment needs. The timetable generator fills up to this number
+([`phase-3b.md`](phase-3b.md)).

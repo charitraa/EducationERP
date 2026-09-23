@@ -301,6 +301,10 @@ class TeachingAssignment(TimeStampedModel):
     teacher = models.ForeignKey(
         "staff.StaffMember", on_delete=models.PROTECT, related_name="teaching_assignments"
     )
+    periods_per_week = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="How many lessons a week. The timetable generator fills up to this.",
+    )
 
     class Meta:
         db_table = "academics_teaching_assignment"
@@ -313,3 +317,30 @@ class TeachingAssignment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.teacher} → {self.subject.name}, {self.section.display_name}"
+
+
+class StudentElective(TimeStampedModel):
+    """An elective subject a student takes in their current class.
+
+    Belongs to one enrollment (one stay in one section), so a student's
+    choices in earlier classes stay in their history. Compulsory subjects
+    aren't recorded: every student of the section takes them.
+    """
+
+    organization = models.ForeignKey(
+        "organizations.Organization", on_delete=models.CASCADE, related_name="student_electives"
+    )
+    enrollment = models.ForeignKey(
+        "students.Enrollment", on_delete=models.CASCADE, related_name="electives"
+    )
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="student_choices")
+
+    class Meta:
+        db_table = "academics_student_elective"
+        ordering = ["enrollment", "subject__name"]
+        constraints = [
+            models.UniqueConstraint(fields=["enrollment", "subject"], name="uniq_student_elective"),
+        ]
+
+    def __str__(self):
+        return f"{self.enrollment.student} takes {self.subject.name}"

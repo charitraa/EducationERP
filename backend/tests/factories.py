@@ -175,3 +175,64 @@ def create_section(campus, program, academic_year, level=11, name="A", **fields)
         organization_id=campus.organization_id, campus=campus, program=program,
         academic_year=academic_year, level=level, name=name, **fields,
     )
+
+
+def create_teaching_assignment(section, subject, teacher, **fields):
+    from modules.academics.models import TeachingAssignment
+
+    return TeachingAssignment.objects.create(
+        organization_id=section.organization_id, section=section, subject=subject,
+        teacher=teacher, **fields,
+    )
+
+
+def create_room(campus, code="r101", name="Room 101", **fields):
+    from modules.academics.models import Room
+
+    return Room.objects.create(
+        organization_id=campus.organization_id, campus=campus, code=code, name=name, **fields
+    )
+
+
+def create_term(academic_year, sequence=1, name=None, start=None, end=None):
+    """By default the first half of the year."""
+    from modules.academics.models import Term
+
+    start = start or academic_year.start_date
+    end = end or academic_year.start_date + (academic_year.end_date - academic_year.start_date) / 2
+    return Term.objects.create(
+        organization_id=academic_year.organization_id, academic_year=academic_year,
+        sequence=sequence, name=name or f"Term {sequence}", start_date=start, end_date=end,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3b — timetable
+# ---------------------------------------------------------------------------
+def create_bell_schedule(campus, name="Day shift", **fields):
+    from modules.timetable.models import BellSchedule
+
+    return BellSchedule.objects.create(
+        organization_id=campus.organization_id, campus=campus, name=name, **fields
+    )
+
+
+def create_period(schedule, name, start, end, **fields):
+    """``start`` and ``end`` as "HH:MM"."""
+    from datetime import time
+
+    from modules.timetable.models import Period
+
+    return Period.objects.create(
+        organization_id=schedule.organization_id, schedule=schedule, name=name,
+        start_time=time.fromisoformat(start), end_time=time.fromisoformat(end), **fields,
+    )
+
+
+def create_timetable_entry(assignment, period, day_of_week=1, **fields):
+    from modules.timetable.models import TimetableEntry
+
+    return TimetableEntry.objects.create(
+        organization_id=assignment.organization_id, teaching_assignment=assignment,
+        period=period, day_of_week=day_of_week, **fields,
+    )

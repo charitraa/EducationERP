@@ -16,9 +16,12 @@ class ServiceError(Exception):
     default_detail = "The request could not be processed."
     default_code = "service_error"
 
-    def __init__(self, detail=None, code=None):
+    def __init__(self, detail=None, code=None, details=None):
         self.detail = detail or self.default_detail
         self.code = code or self.default_code
+        # Optional structured context, e.g. the entries a timetable write
+        # clashes with. Returned as the envelope's ``details``.
+        self.details = details
         super().__init__(self.detail)
 
 
@@ -41,7 +44,7 @@ def api_exception_handler(exc, context):
     """
     if isinstance(exc, ServiceError):
         return Response(
-            {"error": {"code": exc.code, "message": exc.detail, "details": None}},
+            {"error": {"code": exc.code, "message": exc.detail, "details": exc.details}},
             status=exc.status_code,
         )
 

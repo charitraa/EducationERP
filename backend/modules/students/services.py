@@ -169,6 +169,21 @@ def change_student_status(
     return student
 
 
+def _carry_electives(old: Enrollment, new: Enrollment) -> None:
+    """A move to another section of the same program and level (A → B)
+    keeps the student's electives; a promotion starts them afresh, because
+    the next level has its own curriculum."""
+    from modules.academics.models import StudentElective
+
+    old_section, new_section = old.section, new.section
+    if (old_section.program_id, old_section.level) != (new_section.program_id, new_section.level):
+        return
+    StudentElective.objects.bulk_create(
+        StudentElective(organization_id=new.organization_id, enrollment=new, subject_id=subject_id)
+        for subject_id in old.electives.values_list("subject_id", flat=True)
+    )
+
+
 @transaction.atomic
 def place_student(*, student: Student, section, on_date=None, reason="", by=None) -> Student:
     """Put a student in a section (class group), or move them to another.
@@ -213,13 +228,14 @@ def place_student(*, student: Student, section, on_date=None, reason="", by=None
     else:
         on_date = on_date or timezone.localdate()
         _close(current, Enrollment.Status.MOVED, on_date, reason)
-        Enrollment.objects.create(
+        new = Enrollment.objects.create(
             organization_id=student.organization_id,
             student=student,
             campus_id=student.campus_id,
             section=section,
             started_on=on_date,
         )
+        _carry_electives(current, new)
 
     log(
         AuditLog.Action.UPDATE,
@@ -230,3 +246,37 @@ def place_student(*, student: Student, section, on_date=None, reason="", by=None
         metadata={"operation": "place", "reason": reason},
     )
     return student
+
+
+@transaction.atomic
+def promote_section(*, section, to_section, exclude=(), on_date=None, reason="", by=None) -> list[Student]:
+    """Move everyone in ``section`` (except ``exclude``) to ``to_section``:
+    the end-of-year promotion of a whole class, or merging two sections.
+
+    All or nothing. Each student goes through ``place_student``, so the same
+    rules apply; if any student can't be moved, nobody is, and the error
+    lists each student and why.
+    """
+    from modules.students.selectors import students_in_section
+
+    students = list(students_in_section(section).exclude(pk__in=exclude).order_by("pk"))
+    if not students:
+        raise ServiceError("There are no students to move.", code="nothing_to_move")
+
+    moved, failures = [], []
+    for student in students:
+        try:
+            with transaction.atomic():
+                moved.append(place_student(
+                    student=student, section=to_section, on_date=on_date, reason=reason, by=by
+                ))
+        except ServiceError as exc:
+            failures.append({"student": student.pk, "student_number": student.student_number,
+                             "code": exc.code, "message": str(exc.detail)})
+    if failures:
+        raise ConflictError(
+            f"{len(failures)} of {len(students)} students can't be moved; nobody was moved.",
+            code="promotion_failed",
+            details={"students": failures},
+        )
+    return moved

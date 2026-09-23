@@ -66,8 +66,9 @@ MODULE_APPS: list[str] = [
     "modules.parents",
     "modules.staff",
     "modules.admissions",
-    # Phase 3 — academics
+    # Phase 3 — academics and the timetable
     "modules.academics",
+    "modules.timetable",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -257,6 +258,7 @@ SPECTACULAR_SETTINGS = {
         "StaffStatusEnum": "modules.staff.models.StaffMember.Status",
         "AdmissionStatusEnum": "modules.admissions.models.Admission.Status",
         "RelationshipEnum": "modules.parents.models.StudentParent.Relationship",
+        "WeekdayEnum": "modules.timetable.models.Weekday",
     },
 }
 
