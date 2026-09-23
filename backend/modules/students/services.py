@@ -167,3 +167,66 @@ def change_student_status(
         metadata={"operation": "status_change", "reason": reason},
     )
     return student
+
+
+@transaction.atomic
+def place_student(*, student: Student, section, on_date=None, reason="", by=None) -> Student:
+    """Put a student in a section (class group), or move them to another.
+
+    The first placement of an enrollment fills in its section. Any later move —
+    promotion to the next grade, a new academic year, a section change —
+    closes the current enrollment as ``moved`` and opens a new one, so the
+    history shows every class the student has been in.
+    """
+    student = Student.objects.select_for_update().get(pk=student.pk)
+    if section.organization_id != student.organization_id:
+        raise ServiceError("Section belongs to a different organization.", code="invalid_section")
+    if not student.is_enrolled:
+        raise ConflictError(
+            f"A {student.get_status_display().lower()} student cannot be placed.",
+            code="invalid_status",
+        )
+    if section.campus_id != student.campus_id:
+        raise ServiceError(
+            "The section is at another campus. Transfer the student first.",
+            code="different_campus",
+        )
+
+    # Placing ahead into next year's sections is normal (promotions are set
+    # up before the year starts); placing into a year that is already over
+    # is always a mistake.
+    effective = on_date or timezone.localdate()
+    year = section.academic_year
+    if year.end_date < effective:
+        raise ServiceError(
+            f"The academic year {year.name} ended on {year.end_date}.", code="year_ended"
+        )
+
+    current = _open_enrollment(student)
+    if current.section_id == section.pk:
+        raise ServiceError("The student is already in this section.", code="same_section")
+
+    before = current.section_id
+    if current.section_id is None:
+        current.section = section
+        current.save(update_fields=["section", "updated_at"])
+    else:
+        on_date = on_date or timezone.localdate()
+        _close(current, Enrollment.Status.MOVED, on_date, reason)
+        Enrollment.objects.create(
+            organization_id=student.organization_id,
+            student=student,
+            campus_id=student.campus_id,
+            section=section,
+            started_on=on_date,
+        )
+
+    log(
+        AuditLog.Action.UPDATE,
+        instance=student,
+        module="students",
+        actor=by,
+        changes={"section": {"before": before, "after": section.pk}},
+        metadata={"operation": "place", "reason": reason},
+    )
+    return student

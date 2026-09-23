@@ -52,3 +52,26 @@ def validate_linked_user(serializer, user, profile_field: str = "user"):
             f"This user is already linked to another {model._meta.verbose_name}."
         )
     return user
+
+
+def ensure_unique_together(serializer, attrs, fields, message, extra=None) -> None:
+    """Reject a combination already used by a live row, e.g. the same section
+    name in the same year, campus, program and level.
+
+    ``attrs`` are the validated fields; values missing from them come from the
+    instance on update. ``extra`` adds fixed filters (usually organization).
+    Runs before the save so MySQL, which can't enforce partial constraints,
+    is covered and the caller gets a 400 instead of an integrity error.
+    """
+    model = serializer.Meta.model
+    lookup = dict(extra or {})
+    for field in fields:
+        value = attrs[field] if field in attrs else getattr(serializer.instance, field, None)
+        if value is None:
+            return
+        lookup[field] = value
+    clash = model.objects.filter(**lookup)
+    if serializer.instance is not None:
+        clash = clash.exclude(pk=serializer.instance.pk)
+    if clash.exists():
+        raise serializers.ValidationError(message)

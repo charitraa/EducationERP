@@ -131,14 +131,19 @@ class CampusScopedMixin:
                     "Your role does not cover this campus for this action."
                 )
 
+    def campus_of(self, validated_data):
+        """The campus a write targets. Override when it comes through a
+        relation, e.g. a teaching assignment's section."""
+        return validated_data.get(self.campus_field)
+
     def perform_create(self, serializer):
-        self.check_campus_allowed(serializer.validated_data.get(self.campus_field))
+        self.check_campus_allowed(self.campus_of(serializer.validated_data))
         super().perform_create(serializer)
 
     def perform_update(self, serializer):
         # The existing row is already in scope (get_queryset); this covers a
         # move to a different campus.
-        self.check_campus_allowed(serializer.validated_data.get(self.campus_field))
+        self.check_campus_allowed(self.campus_of(serializer.validated_data))
         super().perform_update(serializer)
 
 

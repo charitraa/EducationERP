@@ -7,6 +7,7 @@ from core.common.serializers import (
     validate_linked_user,
 )
 from core.organizations.models import Campus
+from modules.academics.models import Section
 
 from .models import Enrollment, Student
 from .selectors import get_current_enrollment
@@ -14,12 +15,18 @@ from .selectors import get_current_enrollment
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     campus_name = serializers.CharField(source="campus.name", read_only=True)
+    section_name = serializers.CharField(source="section.display_name", read_only=True, default=None)
+    program_name = serializers.CharField(source="section.program.name", read_only=True, default=None)
+    academic_year_name = serializers.CharField(
+        source="section.academic_year.name", read_only=True, default=None
+    )
 
     class Meta:
         model = Enrollment
         fields = [
-            "id", "campus", "campus_name", "status", "started_on", "ended_on",
-            "end_reason", "created_at",
+            "id", "campus", "campus_name", "section", "section_name", "program_name",
+            "academic_year_name", "status", "started_on", "ended_on", "end_reason",
+            "created_at",
         ]
         read_only_fields = fields
 
@@ -92,6 +99,19 @@ class TransferSerializer(serializers.Serializer):
         if campus.organization_id != self.context["student"].organization_id:
             raise serializers.ValidationError("Unknown campus.")
         return campus
+
+
+class PlacementSerializer(serializers.Serializer):
+    section = serializers.PrimaryKeyRelatedField(queryset=Section.objects.all())
+    on_date = serializers.DateField(
+        required=False, help_text="When a move takes effect. Default: today. Ignored for a first placement."
+    )
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+    def validate_section(self, section):
+        if section.organization_id != self.context["student"].organization_id:
+            raise serializers.ValidationError("Unknown section.")
+        return section
 
 
 class StatusChangeSerializer(serializers.Serializer):

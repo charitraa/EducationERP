@@ -15,11 +15,21 @@ register_permissions(
             "students.change_status",
             "Transfer, suspend, reactivate, graduate or withdraw students",
         ),
+        PermissionSpec(
+            "students.place",
+            "Place students in sections, promote them and move them between sections",
+        ),
     ]
 )
 
 grant_to_system_role(
     "campus-admin",
-    ["students.view", "students.create", "students.update", "students.change_status"],
+    [
+        "students.view",
+        "students.create",
+        "students.update",
+        "students.change_status",
+        "students.place",
+    ],
 )
 grant_to_system_role("staff", ["students.view"])

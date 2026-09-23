@@ -11,11 +11,12 @@ from .models import Student
 from .selectors import student_for_user, with_current_enrollment
 from .serializers import (
     EnrollmentSerializer,
+    PlacementSerializer,
     StatusChangeSerializer,
     StudentSerializer,
     TransferSerializer,
 )
-from .services import change_student_status, transfer_student
+from .services import change_student_status, place_student, transfer_student
 
 
 @extend_schema_view(
@@ -47,6 +48,7 @@ class StudentViewSet(CampusScopedViewSet):
         "enrollments": ["students.view"],
         "transfer": ["students.change_status"],
         "change_status": ["students.change_status"],
+        "place": ["students.place"],
     }
 
     def get_permissions(self):
@@ -60,7 +62,10 @@ class StudentViewSet(CampusScopedViewSet):
     @action(detail=True, methods=["get"])
     def enrollments(self, request, pk=None):
         student = self.get_object()
-        return Response(EnrollmentSerializer(student.enrollments.select_related("campus"), many=True).data)
+        history = student.enrollments.select_related(
+            "campus", "section__program", "section__academic_year"
+        )
+        return Response(EnrollmentSerializer(history, many=True).data)
 
     @extend_schema(
         tags=["students"],
@@ -84,6 +89,20 @@ class StudentViewSet(CampusScopedViewSet):
             reason=serializer.validated_data.get("reason", ""),
             by=request.user,
         )
+        return self._student_response(student)
+
+    @extend_schema(
+        tags=["students"],
+        summary="Place a student in a section, or move them (promotion, new year, section change)",
+        request=PlacementSerializer,
+        responses={200: StudentSerializer},
+    )
+    @action(detail=True, methods=["post"])
+    def place(self, request, pk=None):
+        student = self.get_object()
+        serializer = PlacementSerializer(data=request.data, context={"student": student})
+        serializer.is_valid(raise_exception=True)
+        student = place_student(student=student, by=request.user, **serializer.validated_data)
         return self._student_response(student)
 
     @extend_schema(

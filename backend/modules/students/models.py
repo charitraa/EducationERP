@@ -86,8 +86,13 @@ class Enrollment(TimeStampedModel):
     """One continuous period of a student's study at a campus.
 
     History, not state: rows are closed, never edited away or deleted, so a
-    student's path (admitted, transferred, graduated) can always be rebuilt.
-    Phase 3 adds the academic placement — year, program, batch, section.
+    student's path (admitted, placed in Grade 5 A, promoted to Grade 6 B,
+    transferred, graduated) can always be rebuilt.
+
+    ``section`` is the academic placement. It carries the year, program,
+    level and batch, so none of them are copied here. A new enrollment
+    starts unplaced; placing it the first time fills ``section`` in, and
+    every later move closes the row as ``moved`` and opens a new one.
     """
 
     class Status(models.TextChoices):
@@ -95,6 +100,7 @@ class Enrollment(TimeStampedModel):
         COMPLETED = "completed", "Completed"
         TRANSFERRED = "transferred", "Transferred"
         WITHDRAWN = "withdrawn", "Withdrawn"
+        MOVED = "moved", "Moved to another section"
 
     organization = models.ForeignKey(
         "organizations.Organization", on_delete=models.CASCADE, related_name="enrollments"
@@ -102,6 +108,14 @@ class Enrollment(TimeStampedModel):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="enrollments")
     campus = models.ForeignKey(
         "organizations.Campus", on_delete=models.PROTECT, related_name="enrollments"
+    )
+    section = models.ForeignKey(
+        "academics.Section",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="enrollments",
+        help_text="Academic placement. Empty until the student is placed.",
     )
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True

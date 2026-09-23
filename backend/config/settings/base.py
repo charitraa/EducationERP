@@ -66,6 +66,8 @@ MODULE_APPS: list[str] = [
     "modules.parents",
     "modules.staff",
     "modules.admissions",
+    # Phase 3 — academics
+    "modules.academics",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS

@@ -124,3 +124,54 @@ def create_admission(campus, application_number="A-001", **fields):
         application_number=application_number,
         **fields,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — academics
+# ---------------------------------------------------------------------------
+def create_program(organization, code="plus2-science", name="+2 Science", **fields):
+    from modules.academics.models import Program
+
+    fields.setdefault("level_type", "grade")
+    fields.setdefault("first_level", 11)
+    fields.setdefault("last_level", 12)
+    return Program.objects.create(organization=organization, code=code, name=name, **fields)
+
+
+def create_subject(organization, code="physics", name="Physics", **fields):
+    from modules.academics.models import Subject
+
+    return Subject.objects.create(organization=organization, code=code, name=name, **fields)
+
+
+def add_to_curriculum(program, subject, level, **fields):
+    from modules.academics.models import CurriculumSubject
+
+    return CurriculumSubject.objects.create(
+        organization_id=program.organization_id, program=program, subject=subject, level=level, **fields
+    )
+
+
+def create_academic_year(organization, name="2082/83", start=None, end=None, **fields):
+    """By default a year that contains today, so tests don't expire with the
+    calendar. Dates may be given as ISO strings."""
+    from datetime import date, timedelta
+
+    from modules.academics.models import AcademicYear
+
+    start = date.fromisoformat(start) if isinstance(start, str) else start
+    end = date.fromisoformat(end) if isinstance(end, str) else end
+    start = start or date.today() - timedelta(days=60)
+    end = end or start + timedelta(days=364)
+    return AcademicYear.objects.create(
+        organization=organization, name=name, start_date=start, end_date=end, **fields
+    )
+
+
+def create_section(campus, program, academic_year, level=11, name="A", **fields):
+    from modules.academics.models import Section
+
+    return Section.objects.create(
+        organization_id=campus.organization_id, campus=campus, program=program,
+        academic_year=academic_year, level=level, name=name, **fields,
+    )

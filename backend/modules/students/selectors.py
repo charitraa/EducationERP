@@ -16,7 +16,7 @@ def with_current_enrollment(queryset):
         Prefetch(
             "enrollments",
             queryset=Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).select_related(
-                "campus"
+                "campus", "section__program", "section__academic_year"
             ),
             to_attr="current_enrollments",
         )
@@ -29,7 +29,7 @@ def get_current_enrollment(student: Student) -> Enrollment | None:
         return prefetched[0] if prefetched else None
     return (
         student.enrollments.filter(status=Enrollment.Status.ACTIVE)
-        .select_related("campus")
+        .select_related("campus", "section__program", "section__academic_year")
         .first()
     )
 
@@ -66,3 +66,10 @@ def students_visible_to(user, permission: str = "students.view"):
 
 def students_by_ids(ids):
     return Student.objects.select_related("campus").filter(pk__in=ids)
+
+
+def students_in_section(section):
+    """Students currently placed in ``section`` (open enrollments only)."""
+    return Student.objects.select_related("campus").filter(
+        enrollments__section=section, enrollments__status=Enrollment.Status.ACTIVE
+    )
