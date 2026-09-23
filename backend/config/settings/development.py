@@ -5,6 +5,18 @@ from .base import BASE_DIR, REST_FRAMEWORK as BASE_REST_FRAMEWORK, config
 DEBUG = config("DEBUG", default=True, cast=bool)
 ALLOWED_HOSTS = ["*"]
 
+# Local frontend dev servers (Vite / CRA / Next). Override in .env if the
+# frontend runs on a different port.
+CORS_ALLOWED_ORIGINS = config(
+    "CORS_ALLOWED_ORIGINS",
+    default=(
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:3000,http://127.0.0.1:3000"
+    ),
+    cast=Csv(),  # noqa: F405
+)
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",

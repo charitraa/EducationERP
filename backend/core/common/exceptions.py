@@ -1,12 +1,8 @@
-import logging
-
 from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
 from django.http import Http404
 from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
-
-logger = logging.getLogger(__name__)
 
 
 class ServiceError(Exception):
@@ -58,8 +54,9 @@ def api_exception_handler(exc, context):
 
     response = drf_exception_handler(exc, context)
     if response is None:
-        # Unhandled exception: let Django's 500 handling and logging take over.
-        logger.exception("Unhandled exception in API view", exc_info=exc)
+        # Unhandled exception: returning None re-raises it, and Django logs it
+        # to `django.request` with the request attached. Logging it here too
+        # would write every 500 to the error log twice.
         return None
 
     code = getattr(exc, "default_code", "error")

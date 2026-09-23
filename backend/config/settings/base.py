@@ -38,6 +38,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
@@ -61,7 +62,12 @@ MODULE_APPS: list[str] = []
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
 
 MIDDLEWARE = [
+    # Outermost: everything below it, including failures, is logged with an id.
+    "core.common.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Must sit above CommonMiddleware so preflight OPTIONS requests get the
+    # CORS headers even when another middleware short-circuits the response.
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -117,6 +123,28 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# --------------------------------------------------------------------------
+# CORS / CSRF
+# The SPA is served from its own origin, so the browser preflights every API
+# call. Origins are an explicit allow-list from the environment — never "*",
+# because credentialed requests are rejected by the browser when it is.
+# --------------------------------------------------------------------------
+CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
+CORS_ALLOWED_ORIGIN_REGEXES = config(
+    "CORS_ALLOWED_ORIGIN_REGEXES", default="", cast=Csv()
+)
+# JWT travels in the Authorization header, not a cookie, so credentials stay
+# off by default. Flip it on only if you move refresh tokens into cookies.
+CORS_ALLOW_CREDENTIALS = config("CORS_ALLOW_CREDENTIALS", default=False, cast=bool)
+# Only the API is cross-origin; /admin/ and the docs are same-origin.
+CORS_URLS_REGEX = r"^/api/.*$"
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+CORS_PREFLIGHT_MAX_AGE = config("CORS_PREFLIGHT_MAX_AGE", default=3600, cast=int)
+
+# Session-authenticated POSTs from the SPA also need the origin trusted here;
+# CORS alone does not satisfy Django's CSRF origin check.
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 
 # --------------------------------------------------------------------------
 # Django REST Framework
@@ -191,14 +219,63 @@ SPECTACULAR_SETTINGS = {
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "request_context": {
+            "()": "core.common.logging.RequestContextFilter",
+        },
+    },
     "formatters": {
         "verbose": {
             "format": "{levelname} {asctime} {name} {message}",
             "style": "{",
         },
+        # Used for errors: everything needed to chase a 500 without opening
+        # the database — which request, which user, which endpoint.
+        "detailed": {
+            "format": (
+                "{levelname} {asctime} {name} "
+                "request_id={request_id} user={user_id} ip={client_ip} "
+                "{method} {path}\n{message}"
+            ),
+            "style": "{",
+        },
     },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+            "filters": ["request_context"],
+        },
+        # Replaced by a rotating file handler in production.py. Keeping the
+        # name defined here means the logger wiring below is identical in
+        # every environment.
+        "errors": {
+            "class": "logging.StreamHandler",
+            "level": "ERROR",
+            "formatter": "detailed",
+            "filters": ["request_context"],
+        },
+    },
+    "loggers": {
+        # Django logs every unhandled view exception here at ERROR with the
+        # traceback attached. This is the 500 log.
+        "django.request": {
+            "handlers": ["console", "errors"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+        # Uncaught exceptions escaping the WSGI/ASGI handler itself.
+        "django.server": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+        # Our own code: errors it raises deliberately go to the same file.
+        "core": {
+            "handlers": ["console", "errors"],
+            "level": config("LOG_LEVEL", default="INFO"),
+            "propagate": False,
+        },
     },
     "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},
 }
