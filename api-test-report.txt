@@ -1,0 +1,619 @@
+====================================================================================================
+                                  EDUCATION ERP — API TEST REPORT                                   
+====================================================================================================
+
+Date          : 2026-09-23
+Scope         : every Phase 1 and Phase 2 endpoint, over real HTTP, with realistic data
+Result        : 207/207 checks passed, 0 failed
+Server errors : 0 (no HTTP 500 in the server log)
+
+ENVIRONMENT
+----------------------------------------------------------------------------------------------------
+Database      : MariaDB 12.3.3-MariaDB (MySQL engine, same as your dev setup: DEV_DATABASE=mysql)
+                A throwaway database 'test_erp_apitest' was created for the run and DROPPED
+                afterwards. Your own database was not touched.
+Server        : Django 6.1.1 runserver, config.settings.development, Python 3.14.7
+Client        : Python urllib (standard library), JSON over HTTP, JWT bearer tokens
+Setup         : migrate → sync_permissions → createsuperuser → bootstrap_organization × 2
+Login limit   : raised to 1000/min for sections 1–13 (the run logs in ~20 times from one IP);
+                section 14 restarts the server with the real 10/min limit and tests it.
+Speed         : median 14 ms, slowest 570 ms per request (dev server, local machine)
+
+SUMMARY BY AREA
+----------------------------------------------------------------------------------------------------
+  1. System                                                        5/5   PASS
+  2. Authentication                                               14/14  PASS
+  3. Organizations                                                11/11  PASS
+  4. Campuses                                                     14/14  PASS
+  5. Roles & permissions                                           5/5   PASS
+  6. Users                                                        22/22  PASS
+  7. Privilege escalation (as Ram, campus-admin for Lalitpur)     13/13  PASS
+  8. Students                                                     44/44  PASS
+  9. Parents                                                      16/16  PASS
+  10. Staff                                                       14/14  PASS
+  11. Admissions                                                  29/29  PASS
+  12. Audit log                                                    7/7   PASS
+  13. Account lifecycle                                           11/11  PASS
+  14. Login rate limit (real setting: 10/min)                      2/2   PASS
+
+BUGS FOUND BY THIS RUN (both fixed, with regression tests, then the whole run repeated)
+----------------------------------------------------------------------------------------------------
+  1. Failed-login error message was unreadable.
+     Before: {"code": "invalid", "message": "[ErrorDetail(string='Invalid credentials or inactive
+             account.', code='invalid_credentials')]"}
+     After : {"code": "invalid_credentials", "message": "Invalid credentials or inactive account."}
+     Cause : the error formatter turned a one-item list into its Python text form.
+     Fix   : backend/core/common/exceptions.py. This affected any error raised the same way,
+             not only login.
+     Test  : core/authentication/tests/test_auth_api.py::test_failed_login_error_is_readable
+
+  2. College admins could not see failed logins against their own users.
+     Before: every failed-login audit entry had organization = NULL, so it never appeared in
+             /api/v1/audit-logs/ for a college's admin — password guessing went unnoticed.
+     After : the entry is filed under the account's organization (unknown emails stay
+             platform-level, so nothing is revealed about who has an account).
+     Fix   : backend/core/audit/signals.py
+     Test  : test_failed_login_is_filed_under_the_accounts_organization
+
+  Also corrected (mistakes in the test script, not the API):
+   - Wrong-password login returns 400, as designed and unit-tested; the script expected 401.
+   - Swagger page returned 406 because the script asked for JSON; asking for HTML gives 200.
+   - "Teacher cannot list admissions" was wrong: in section 7 Ram legitimately gave Gita the
+     Exam Office role at Lalitpur, and she saw exactly Lalitpur's two applications. The
+     check now verifies that scope, and a staff-only user (Sita) is checked for 403 instead.
+
+TEST DATA USED
+----------------------------------------------------------------------------------------------------
+  Organizations : Kathmandu Model College (kmc, 3 campuses), Sunrise Secondary School (sunrise,
+                  1 campus), plus a temporary 'Everest Academy' created and deleted by the superuser
+  Campuses      : Baneshwor (main), Lalitpur, Bhaktapur
+  Users & roles : root@platform.test          platform superuser
+                  principal@kmc.test          org-admin (whole college)
+                  principal@sunrise.test      org-admin of the other school (isolation checks)
+                  ram.thapa@kmc.test          campus-admin for Lalitpur only
+                  hari.adhikari@kmc.test      campus-admin for Bhaktapur only
+                  sita.shrestha@kmc.test      staff (accountant) — later deactivated
+                  gita.poudel@kmc.test        staff (teacher), + Exam Office at Lalitpur
+                  aarav.gurung@kmc.test       student (linked to student KMC-2026-001)
+                  mohan.gurung@kmc.test       parent  (linked to parent Mohan Gurung)
+  Custom role   : Exam Office (students.view, admissions.view)
+  Students      : KMC-2026-001 Aarav Gurung, 002 Anisha Magar, 003 Kiran Tamang,
+                  004 Sujal Maharjan (transferred Lalitpur → Bhaktapur), 005 Prerana Karki
+                  (suspended, then reactivated), 006 Bibek Shahi (graduated), 007 Nisha Bhattarai
+                  (created by Ram, then deleted), 101 Rohan Shrestha and 102 Puja Thakuri
+                  (both created by enrolling their applications)
+  Parents       : Mohan Gurung (father of Aarav), Sita Magar (mother of Anisha),
+                  Rajesh Shrestha (created automatically when Rohan was enrolled)
+  Staff         : EMP-001 Gita Poudel (HOD Science), EMP-002 Bikash Rai (Maths, on leave),
+                  EMP-003 Laxmi Basnet (Accountant, non-teaching)
+  Admissions    : APP-2026-101 Rohan (approved → enrolled), 102 Srijana (rejected → deleted),
+                  103 Nabin (withdrawn), 104 Puja (approved, failed enroll on a taken number,
+                  then enrolled by Ram)
+
+ENDPOINTS COVERED
+----------------------------------------------------------------------------------------------------
+  GET    /api/docs/                                             1 call(s)
+  GET    /api/schema/                                           1 call(s)
+  GET    /api/v1/admissions/                                    4 call(s)
+  POST   /api/v1/admissions/                                    5 call(s)
+  DELETE /api/v1/admissions/{id}/                               2 call(s)
+  GET    /api/v1/admissions/{id}/                               3 call(s)
+  PATCH  /api/v1/admissions/{id}/                               2 call(s)
+  POST   /api/v1/admissions/{id}/approve/                       3 call(s)
+  POST   /api/v1/admissions/{id}/enroll/                        5 call(s)
+  POST   /api/v1/admissions/{id}/reject/                        2 call(s)
+  POST   /api/v1/admissions/{id}/withdraw/                      1 call(s)
+  GET    /api/v1/audit-logs/                                    7 call(s)
+  POST   /api/v1/auth/change-password/                          2 call(s)
+  POST   /api/v1/auth/login/                                   18 call(s)
+  POST   /api/v1/auth/logout/                                   1 call(s)
+  GET    /api/v1/auth/me/                                       3 call(s)
+  PATCH  /api/v1/auth/me/                                       1 call(s)
+  POST   /api/v1/auth/refresh/                                  3 call(s)
+  GET    /api/v1/campuses/                                      4 call(s)
+  POST   /api/v1/campuses/                                      7 call(s)
+  DELETE /api/v1/campuses/{id}/                                 1 call(s)
+  GET    /api/v1/campuses/{id}/                                 1 call(s)
+  PATCH  /api/v1/campuses/{id}/                                 1 call(s)
+  GET    /api/v1/does-not-exist/                                1 call(s)
+  GET    /api/v1/organizations/                                 3 call(s)
+  POST   /api/v1/organizations/                                 2 call(s)
+  DELETE /api/v1/organizations/{id}/                            2 call(s)
+  GET    /api/v1/organizations/{id}/                            3 call(s)
+  PATCH  /api/v1/organizations/{id}/                            2 call(s)
+  GET    /api/v1/parents/                                       4 call(s)
+  POST   /api/v1/parents/                                       2 call(s)
+  GET    /api/v1/parents/me/                                    1 call(s)
+  GET    /api/v1/parents/{id}/                                  1 call(s)
+  POST   /api/v1/parents/{id}/link-student/                     5 call(s)
+  GET    /api/v1/parents/{id}/students/                         1 call(s)
+  POST   /api/v1/parents/{id}/unlink-student/                   2 call(s)
+  GET    /api/v1/permissions/                                   1 call(s)
+  GET    /api/v1/roles/                                         1 call(s)
+  POST   /api/v1/roles/                                         1 call(s)
+  DELETE /api/v1/roles/{id}/                                    1 call(s)
+  PATCH  /api/v1/roles/{id}/                                    2 call(s)
+  GET    /api/v1/staff/                                         3 call(s)
+  POST   /api/v1/staff/                                         4 call(s)
+  GET    /api/v1/staff/me/                                      1 call(s)
+  GET    /api/v1/staff/{id}/                                    2 call(s)
+  PATCH  /api/v1/staff/{id}/                                    4 call(s)
+  GET    /api/v1/students/                                     11 call(s)
+  POST   /api/v1/students/                                     12 call(s)
+  GET    /api/v1/students/me/                                   2 call(s)
+  DELETE /api/v1/students/{id}/                                 2 call(s)
+  GET    /api/v1/students/{id}/                                 6 call(s)
+  PATCH  /api/v1/students/{id}/                                 3 call(s)
+  POST   /api/v1/students/{id}/change-status/                   4 call(s)
+  GET    /api/v1/students/{id}/enrollments/                     1 call(s)
+  POST   /api/v1/students/{id}/transfer/                        5 call(s)
+  GET    /api/v1/users/                                         4 call(s)
+  POST   /api/v1/users/                                        10 call(s)
+  GET    /api/v1/users/{id}/                                    1 call(s)
+  PATCH  /api/v1/users/{id}/                                    1 call(s)
+  POST   /api/v1/users/{id}/assign-role/                        7 call(s)
+  POST   /api/v1/users/{id}/deactivate/                         2 call(s)
+  POST   /api/v1/users/{id}/revoke-role/                        2 call(s)
+  GET    /api/v1/users/{id}/roles/                              1 call(s)
+  POST   /api/v1/users/{id}/set-password/                       3 call(s)
+  GET    /health/                                               1 call(s)
+  GET    /ready/                                                1 call(s)
+  66 method+path combinations.
+
+NOT COVERED BY THIS RUN
+----------------------------------------------------------------------------------------------------
+  - PUT (full replace): every update used PATCH. PUT goes through the same serializers and
+    checks, and is covered by the unit tests.
+  - DELETE /users/{id}/ (soft-delete of a user); deactivation was tested instead.
+  - The Django admin site (/admin/).
+  These are covered by the 268 automated tests (python manage.py test), which run on SQLite.
+
+DETAILED RESULTS
+----------------------------------------------------------------------------------------------------
+  Result  Code(expected)  Method  Path  [as user]  — check
+
+  1. System
+  PASS    200(200)         GET    /health/  [anonymous]
+                          — liveness
+  PASS    200(200)         GET    /ready/  [anonymous]
+                          — readiness: database and cache
+  PASS    200(200)         GET    /api/schema/  [anonymous]
+                          — OpenAPI schema
+  PASS    200(200)         GET    /api/docs/  [anonymous]
+                          — Swagger UI page
+  PASS    404(401/404)     GET    /api/v1/does-not-exist/  [anonymous]
+                          — unknown endpoint uses the error envelope
+
+  2. Authentication
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as root
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as principal
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — login response carries permissions
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as sunrise
+  PASS    400(400)         POST   /api/v1/auth/login/  [anonymous]
+                          — wrong password (readable error)
+  PASS    400(400)         POST   /api/v1/auth/login/  [anonymous]
+                          — unknown email
+  PASS    same(same)       -      -  [-]
+                          — unknown email and wrong password look identical
+  PASS    400(400)         POST   /api/v1/auth/login/  [anonymous]
+                          — missing fields
+  PASS    200(200)         GET    /api/v1/auth/me/  [principal]
+                          — current user
+  PASS    401(401)         GET    /api/v1/auth/me/  [anonymous]
+                          — no token
+  PASS    401(401)         GET    /api/v1/auth/me/  [forged]
+                          — forged token
+  PASS    200(200)         PATCH  /api/v1/auth/me/  [principal]
+                          — update own phone
+  PASS    200(200)         POST   /api/v1/auth/refresh/  [anonymous]
+                          — refresh token
+  PASS    401(401)         POST   /api/v1/auth/refresh/  [anonymous]
+                          — reusing a rotated refresh token
+
+  3. Organizations
+  PASS    200(200)         GET    /api/v1/organizations/  [principal]
+                          — principal lists organizations
+  PASS    200(200)         GET    /api/v1/organizations/  [sunrise]
+                          — sunrise principal lists organizations
+  PASS    200(200)         GET    /api/v1/organizations/1/  [principal]
+                          — retrieve own organization
+  PASS    200(200)         PATCH  /api/v1/organizations/1/  [principal]
+                          — update own organization
+  PASS    200(200)         PATCH  /api/v1/organizations/1/  [principal]
+                          — code cannot be changed
+  PASS    403(403)         POST   /api/v1/organizations/  [principal]
+                          — org-admin cannot create an organization
+  PASS    403(403)         DELETE /api/v1/organizations/1/  [principal]
+                          — org-admin cannot delete own organization
+  PASS    404(404)         GET    /api/v1/organizations/2/  [principal]
+                          — another organization is invisible
+  PASS    200(200)         GET    /api/v1/organizations/  [root]
+                          — platform admin sees all organizations
+  PASS    201(201)         POST   /api/v1/organizations/  [root]
+                          — platform admin creates an organization
+  PASS    204(204)         DELETE /api/v1/organizations/3/  [root]
+                          — platform admin deletes an organization
+
+  4. Campuses
+  PASS    200(200)         GET    /api/v1/campuses/  [principal]
+                          — list campuses
+  PASS    201(201)         POST   /api/v1/campuses/  [principal]
+                          — create Lalitpur Campus
+  PASS    201(201)         POST   /api/v1/campuses/  [principal]
+                          — create Bhaktapur Campus
+  PASS    400(400)         POST   /api/v1/campuses/  [principal]
+                          — duplicate campus code
+  PASS    400(400)         POST   /api/v1/campuses/  [principal]
+                          — code with spaces is rejected
+  PASS    400(400)         POST   /api/v1/campuses/  [principal]
+                          — second main campus is rejected
+  PASS    200(200)         GET    /api/v1/campuses/?is_main=true  [principal]
+                          — filter main campus
+  PASS    200(200)         GET    /api/v1/campuses/?search=bhakta  [principal]
+                          — search campuses
+  PASS    200(200)         PATCH  /api/v1/campuses/3/  [principal]
+                          — update campus
+  PASS    200(200)         GET    /api/v1/organizations/1/  [principal]
+                          — organization now has 3 campuses
+  PASS    404(404)         GET    /api/v1/campuses/3/  [sunrise]
+                          — other school cannot see kmc campus
+  PASS    400(400)         POST   /api/v1/campuses/  [root]
+                          — platform admin must name the organization
+  PASS    201(201)         POST   /api/v1/campuses/  [root]
+                          — platform admin creates a campus for sunrise
+  PASS    204(204)         DELETE /api/v1/campuses/5/  [root]
+                          — soft-delete a campus
+
+  5. Roles & permissions
+  PASS    200(200)         GET    /api/v1/permissions/  [principal]
+                          — permission catalogue
+  PASS    200(200)         GET    /api/v1/roles/?page_size=50  [principal]
+                          — list roles
+  PASS    201(201)         POST   /api/v1/roles/  [principal]
+                          — create a custom role
+  PASS    400(400)         PATCH  /api/v1/roles/4/  [principal]
+                          — system role cannot be edited
+  PASS    403(403)         DELETE /api/v1/roles/4/  [principal]
+                          — system role cannot be deleted
+
+  6. Users
+  PASS    201(201)         POST   /api/v1/users/  [principal]
+                          — create user Ram Thapa
+  PASS    201(201)         POST   /api/v1/users/  [principal]
+                          — create user Hari Adhikari
+  PASS    201(201)         POST   /api/v1/users/  [principal]
+                          — create user Sita Shrestha
+  PASS    201(201)         POST   /api/v1/users/  [principal]
+                          — create user Gita Poudel
+  PASS    201(201)         POST   /api/v1/users/  [principal]
+                          — create user Aarav Gurung
+  PASS    201(201)         POST   /api/v1/users/  [principal]
+                          — create user Mohan Gurung
+  PASS    400(400/409)     POST   /api/v1/users/  [principal]
+                          — duplicate email
+  PASS    400(400)         POST   /api/v1/users/  [principal]
+                          — weak password
+  PASS    400(400)         POST   /api/v1/users/  [principal]
+                          — retired user type is rejected
+  PASS    201(201)         POST   /api/v1/users/4/assign-role/  [principal]
+                          — give Ram campus-admin for Lalitpur
+  PASS    201(201)         POST   /api/v1/users/5/assign-role/  [principal]
+                          — give Hari campus-admin for Bhaktapur
+  PASS    409(409)         POST   /api/v1/users/5/assign-role/  [principal]
+                          — same role twice is a conflict
+  PASS    200(200)         GET    /api/v1/users/4/roles/  [principal]
+                          — list a user's roles
+  PASS    200(200)         GET    /api/v1/users/?user_type=teacher  [principal]
+                          — filter users by type
+  PASS    200(200)         GET    /api/v1/users/?search=gurung  [principal]
+                          — search users
+  PASS    404(404)         GET    /api/v1/users/4/  [sunrise]
+                          — sunrise cannot see kmc users
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as ram
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as hari
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as sita
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as gita
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as aarav
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as mohan
+
+  7. Privilege escalation (as Ram, campus-admin for Lalitpur)
+  PASS    200(200)         GET    /api/v1/users/?search=principal  [principal]
+                          — look up principal
+  PASS    403(403)         POST   /api/v1/users/4/assign-role/  [ram]
+                          — Ram gives himself org-admin
+  PASS    403(403)         POST   /api/v1/users/2/set-password/  [ram]
+                          — Ram resets the principal's password
+  PASS    403(403)         POST   /api/v1/users/2/deactivate/  [ram]
+                          — Ram deactivates the principal
+  PASS    403(403)         PATCH  /api/v1/users/2/  [ram]
+                          — Ram edits the principal
+  PASS    403(403)         POST   /api/v1/users/2/revoke-role/  [ram]
+                          — Ram revokes the principal's org-admin
+  PASS    403(403)         POST   /api/v1/users/  [ram]
+                          — Ram creates a user with org-admin
+  PASS    200(200)         GET    /api/v1/users/?search=sneaky  [principal]
+                          — ...and no half-created account is left
+  PASS    403(403)         POST   /api/v1/users/7/assign-role/  [ram]
+                          — Ram grants Exam Office organization-wide (holds it only at Lalitpur)
+  PASS    201(201)         POST   /api/v1/users/7/assign-role/  [ram]
+                          — Ram grants Exam Office at Lalitpur
+  PASS    403(403)         POST   /api/v1/users/7/assign-role/  [ram]
+                          — Ram grants Exam Office at Bhaktapur
+  PASS    403(403)         PATCH  /api/v1/roles/6/  [ram]
+                          — Ram edits a role (no roles.update)
+  PASS    204(204)         POST   /api/v1/users/8/set-password/  [ram]
+                          — Ram manages a less powerful user
+
+  8. Students
+  PASS    201(201)         POST   /api/v1/students/  [principal]
+                          — create student Aarav Gurung
+  PASS    201(201)         POST   /api/v1/students/  [principal]
+                          — create student Anisha Magar
+  PASS    201(201)         POST   /api/v1/students/  [principal]
+                          — create student Kiran Tamang
+  PASS    201(201)         POST   /api/v1/students/  [principal]
+                          — create student Sujal Maharjan
+  PASS    201(201)         POST   /api/v1/students/  [principal]
+                          — create student Prerana Karki
+  PASS    201(201)         POST   /api/v1/students/  [principal]
+                          — create student Bibek Shahi
+  PASS    400(400)         POST   /api/v1/students/  [principal]
+                          — duplicate student number
+  PASS    200(200)         GET    /api/v1/campuses/  [sunrise]
+                          — sunrise lists its campus
+  PASS    400(400)         POST   /api/v1/students/  [principal]
+                          — campus of another school
+  PASS    400(400)         POST   /api/v1/students/  [principal]
+                          — account already linked to a student
+  PASS    200(200)         GET    /api/v1/students/  [principal]
+                          — list students
+  PASS    200(200)         GET    /api/v1/students/?search=anisha  [principal]
+                          — search students
+  PASS    200(200)         GET    /api/v1/students/?campus=3  [principal]
+                          — filter by campus
+  PASS    200(200)         GET    /api/v1/students/?page_size=2&ordering=student_number  [principal]
+                          — pagination
+  PASS    200(200)         GET    /api/v1/students/3/  [principal]
+                          — retrieve with current enrollment
+  PASS    200(200)         PATCH  /api/v1/students/3/  [principal]
+                          — update details
+  PASS    400(400)         PATCH  /api/v1/students/3/  [principal]
+                          — campus cannot be edited directly
+  PASS    200(200)         PATCH  /api/v1/students/3/  [principal]
+                          — status cannot be edited directly
+  PASS    200(200)         POST   /api/v1/students/4/transfer/  [principal]
+                          — transfer Sujal to Bhaktapur
+  PASS    200(200)         GET    /api/v1/students/4/enrollments/  [principal]
+                          — enrollment history after transfer
+  PASS    400(400)         POST   /api/v1/students/4/transfer/  [principal]
+                          — transfer to the same campus
+  PASS    400(400)         POST   /api/v1/students/3/transfer/  [principal]
+                          — transfer dated before enrollment
+  PASS    200(200)         POST   /api/v1/students/5/change-status/  [principal]
+                          — suspend Prerana
+  PASS    200(200)         POST   /api/v1/students/5/change-status/  [principal]
+                          — reactivate Prerana
+  PASS    200(200)         POST   /api/v1/students/6/change-status/  [principal]
+                          — graduate Bibek
+  PASS    409(409)         POST   /api/v1/students/6/change-status/  [principal]
+                          — graduated is final
+  PASS    409(409)         POST   /api/v1/students/6/transfer/  [principal]
+                          — graduated student cannot transfer
+  PASS    200(200)         GET    /api/v1/students/?status=graduated  [principal]
+                          — filter graduated
+  PASS    200(200)         GET    /api/v1/students/  [ram]
+                          — Ram lists students (Lalitpur only)
+  PASS    404(404)         GET    /api/v1/students/3/  [ram]
+                          — Ram opens a Bhaktapur student
+  PASS    403(403)         POST   /api/v1/students/  [ram]
+                          — Ram creates a student at Bhaktapur
+  PASS    201(201)         POST   /api/v1/students/  [ram]
+                          — Ram creates a student at Lalitpur
+  PASS    403(403)         POST   /api/v1/students/7/transfer/  [ram]
+                          — Ram transfers a student out of Lalitpur
+  PASS    403(403)         DELETE /api/v1/students/7/  [ram]
+                          — Ram deletes a student (no students.delete)
+  PASS    200(200)         GET    /api/v1/students/  [gita]
+                          — teacher (staff role) views students
+  PASS    403(403)         POST   /api/v1/students/  [gita]
+                          — teacher creates a student
+  PASS    200(200)         GET    /api/v1/students/me/  [aarav]
+                          — student reads own record
+  PASS    403(403)         GET    /api/v1/students/  [aarav]
+                          — student lists all students
+  PASS    403(403)         GET    /api/v1/students/2/  [aarav]
+                          — student opens a classmate
+  PASS    404(404)         GET    /api/v1/students/me/  [gita]
+                          — account with no student record
+  PASS    404(404)         GET    /api/v1/students/1/  [sunrise]
+                          — other school opens a kmc student
+  PASS    200(200)         GET    /api/v1/students/  [sunrise]
+                          — other school's list is empty
+  PASS    204(204)         DELETE /api/v1/students/7/  [principal]
+                          — soft-delete a student
+  PASS    404(404)         GET    /api/v1/students/7/  [principal]
+                          — deleted student is gone
+
+  9. Parents
+  PASS    201(201)         POST   /api/v1/parents/  [principal]
+                          — create parent Mohan Gurung (with login)
+  PASS    201(201)         POST   /api/v1/parents/  [principal]
+                          — create parent Sita Magar
+  PASS    201(201)         POST   /api/v1/parents/1/link-student/  [principal]
+                          — link Mohan → Aarav (father, primary)
+  PASS    201(201)         POST   /api/v1/parents/2/link-student/  [principal]
+                          — link Sita → Anisha (mother, primary)
+  PASS    201(201)         POST   /api/v1/parents/2/link-student/  [principal]
+                          — link Sita → Aarav as new primary
+  PASS    200(200)         GET    /api/v1/parents/1/students/  [principal]
+                          — Mohan is no longer Aarav's primary contact
+  PASS    409(409)         POST   /api/v1/parents/1/link-student/  [principal]
+                          — duplicate link
+  PASS    200(200)         GET    /api/v1/parents/?student=1  [principal]
+                          — parents of Aarav
+  PASS    200(200)         GET    /api/v1/parents/?search=9851012345  [principal]
+                          — search parents
+  PASS    204(204)         POST   /api/v1/parents/2/unlink-student/  [principal]
+                          — unlink Sita from Aarav
+  PASS    400(400)         POST   /api/v1/parents/2/unlink-student/  [principal]
+                          — unlink again
+  PASS    400(400)         POST   /api/v1/parents/2/link-student/  [ram]
+                          — Ram links a Bhaktapur student
+  PASS    200(200)         GET    /api/v1/parents/me/  [mohan]
+                          — parent reads own profile and children
+  PASS    403(403)         GET    /api/v1/parents/  [mohan]
+                          — parent lists parents
+  PASS    403(403)         GET    /api/v1/students/  [mohan]
+                          — parent lists students
+  PASS    404(404)         GET    /api/v1/parents/2/  [sunrise]
+                          — other school opens a kmc parent
+
+  10. Staff
+  PASS    201(201)         POST   /api/v1/staff/  [principal]
+                          — create staff Gita Poudel
+  PASS    201(201)         POST   /api/v1/staff/  [principal]
+                          — create staff Bikash Rai
+  PASS    201(201)         POST   /api/v1/staff/  [principal]
+                          — create staff Laxmi Basnet
+  PASS    400(400)         POST   /api/v1/staff/  [principal]
+                          — duplicate employee number
+  PASS    400(400)         PATCH  /api/v1/staff/2/  [principal]
+                          — 'left' without a date
+  PASS    400(400)         PATCH  /api/v1/staff/2/  [principal]
+                          — leaving before joining
+  PASS    200(200)         PATCH  /api/v1/staff/2/  [principal]
+                          — mark Bikash on leave
+  PASS    200(200)         GET    /api/v1/staff/?staff_type=non_teaching  [principal]
+                          — filter non-teaching staff
+  PASS    200(200)         GET    /api/v1/staff/?search=mathematics  [principal]
+                          — search by designation
+  PASS    200(200)         GET    /api/v1/staff/  [ram]
+                          — Ram lists staff (Lalitpur only)
+  PASS    404(404)         GET    /api/v1/staff/3/  [ram]
+                          — Ram opens Bhaktapur staff
+  PASS    200(200)         GET    /api/v1/staff/me/  [gita]
+                          — teacher reads own staff record
+  PASS    403(403)         PATCH  /api/v1/staff/2/  [gita]
+                          — teacher edits a staff record
+  PASS    404(404)         GET    /api/v1/staff/1/  [sunrise]
+                          — other school opens kmc staff
+
+  11. Admissions
+  PASS    201(201)         POST   /api/v1/admissions/  [principal]
+                          — record application APP-2026-101
+  PASS    201(201)         POST   /api/v1/admissions/  [principal]
+                          — record application APP-2026-102
+  PASS    201(201)         POST   /api/v1/admissions/  [principal]
+                          — record application APP-2026-103
+  PASS    201(201)         POST   /api/v1/admissions/  [principal]
+                          — record application APP-2026-104
+  PASS    400(400)         POST   /api/v1/admissions/  [principal]
+                          — duplicate application number
+  PASS    200(200)         PATCH  /api/v1/admissions/4/  [principal]
+                          — status cannot be set by editing
+  PASS    200(200)         POST   /api/v1/admissions/1/approve/  [principal]
+                          — approve Rohan
+  PASS    400(400)         PATCH  /api/v1/admissions/1/  [principal]
+                          — edit an approved application
+  PASS    200(200)         POST   /api/v1/admissions/1/enroll/  [principal]
+                          — enroll Rohan
+  PASS    200(200)         GET    /api/v1/students/8/  [principal]
+                          — enrolled student exists at Lalitpur
+  PASS    200(200)         GET    /api/v1/parents/?student=8  [principal]
+                          — guardian was created and linked as primary
+  PASS    409(409)         POST   /api/v1/admissions/1/enroll/  [principal]
+                          — enroll twice
+  PASS    400(400)         POST   /api/v1/admissions/2/reject/  [principal]
+                          — reject without a reason
+  PASS    200(200)         POST   /api/v1/admissions/2/reject/  [principal]
+                          — reject Srijana
+  PASS    409(409)         POST   /api/v1/admissions/2/approve/  [principal]
+                          — approve a rejected application
+  PASS    200(200)         POST   /api/v1/admissions/3/withdraw/  [principal]
+                          — Nabin withdraws
+  PASS    409(409)         POST   /api/v1/admissions/4/enroll/  [principal]
+                          — enroll a pending application
+  PASS    200(200)         POST   /api/v1/admissions/4/approve/  [principal]
+                          — approve Puja
+  PASS    400(400)         POST   /api/v1/admissions/4/enroll/  [principal]
+                          — enroll with a taken student number
+  PASS    200(200)         GET    /api/v1/admissions/4/  [principal]
+                          — ...and Puja is still only approved
+  PASS    400(400)         DELETE /api/v1/admissions/4/  [principal]
+                          — delete an approved application
+  PASS    204(204)         DELETE /api/v1/admissions/2/  [principal]
+                          — delete a rejected application
+  PASS    200(200)         GET    /api/v1/admissions/?status=approved  [principal]
+                          — filter approved
+  PASS    200(200)         GET    /api/v1/admissions/  [ram]
+                          — Ram lists admissions (Lalitpur only)
+  PASS    404(404)         GET    /api/v1/admissions/3/  [ram]
+                          — Ram opens a Bhaktapur application
+  PASS    200(200)         POST   /api/v1/admissions/4/enroll/  [ram]
+                          — Ram enrolls Puja
+  PASS    200(200)         GET    /api/v1/admissions/  [gita]
+                          — Gita sees Lalitpur applications via Exam Office (granted at Lalitpur in section 7)
+  PASS    403(403)         GET    /api/v1/admissions/  [sita]
+                          — accountant (staff role only) lists admissions
+  PASS    404(404)         GET    /api/v1/admissions/1/  [sunrise]
+                          — other school opens a kmc application
+
+  12. Audit log
+  PASS    200(200)         GET    /api/v1/audit-logs/  [principal]
+                          — principal reads the audit trail
+  PASS    200(200)         GET    /api/v1/audit-logs/?module=students&action=update  [principal]
+                          — student changes were audited
+  PASS    200(200)         GET    /api/v1/audit-logs/?module=admissions  [principal]
+                          — admission decisions were audited
+  PASS    200(200)         GET    /api/v1/audit-logs/?action=permission_change&actor_email=ram  [principal]
+                          — blocked escalation attempts leave no role change
+  PASS    200(200)         GET    /api/v1/audit-logs/?action=login_failed  [principal]
+                          — failed logins against kmc users are visible to kmc's admin
+  PASS    200(200)         GET    /api/v1/audit-logs/?search=kmc.test  [sunrise]
+                          — other school sees none of kmc's entries
+  PASS    403(403)         GET    /api/v1/audit-logs/  [gita]
+                          — teacher reads the audit trail
+
+  13. Account lifecycle
+  PASS    204(204)         POST   /api/v1/auth/change-password/  [aarav]
+                          — student changes own password
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as aarav-new
+  PASS    400(400)         POST   /api/v1/auth/change-password/  [aarav]
+                          — wrong current password
+  PASS    204(204)         POST   /api/v1/users/7/set-password/  [principal]
+                          — principal resets the teacher's password
+  PASS    200(200)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as gita-new
+  PASS    200(200)         POST   /api/v1/users/6/deactivate/  [principal]
+                          — deactivate Sita
+  PASS    400(400)         POST   /api/v1/auth/login/  [anonymous]
+                          — log in as sita-again
+  PASS    204(204)         POST   /api/v1/users/4/revoke-role/  [principal]
+                          — revoke Ram's campus-admin
+  PASS    403(403)         GET    /api/v1/students/  [ram]
+                          — Ram loses access at once (same token)
+  PASS    204(204)         POST   /api/v1/auth/logout/  [mohan]
+                          — log out
+  PASS    401(401)         POST   /api/v1/auth/refresh/  [anonymous]
+                          — refresh after logout
+
+  14. Login rate limit (real setting: 10/min)
+  PASS    400,400,400,400,400,400,400,400,400,400,429,429(10×400 then 429) POST   /api/v1/auth/login/  [anonymous]
+                          — 12 wrong logins in a row
+  PASS    429(429)         POST   /api/v1/auth/login/  [anonymous]
+                          — even the right password waits until the minute passes
+
+====================================================================================================
+                                   END OF REPORT — 207/207 passed                                   
+====================================================================================================

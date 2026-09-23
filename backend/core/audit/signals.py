@@ -25,10 +25,23 @@ def audit_logout(sender, request, user, **kwargs):
 
 @receiver(user_login_failed)
 def audit_login_failed(sender, credentials, request=None, **kwargs):
+    from django.contrib.auth import get_user_model
+
     # Credentials are dropped except for the identifier — never log passwords.
+    email = ((credentials or {}).get("username") or "").lower().strip()
+    # File the attempt under the account's organization, so its admins can
+    # see password guessing against their users. An unknown email stays
+    # platform-level: no tenant owns it.
+    organization_id = (
+        get_user_model()
+        .all_objects.filter(email=email)
+        .values_list("organization_id", flat=True)
+        .first()
+    )
     log(
         AuditLog.Action.LOGIN_FAILED,
         module="authentication",
-        metadata={"email": (credentials or {}).get("username", "")},
+        organization=organization_id,
+        metadata={"email": email},
         request=request or get_current_request(),
     )

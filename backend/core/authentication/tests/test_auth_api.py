@@ -75,6 +75,24 @@ class LoginTests(APITestCaseBase):
         self.assertEqual(entry.metadata.get("email"), self.user.email)
         self.assertNotIn("wrong-password", str(entry.metadata))
 
+    def test_failed_login_error_is_readable(self):
+        """Regression: the message used to be "[ErrorDetail(string=...)]"."""
+        response = self.client.post(LOGIN_URL, {"email": self.user.email, "password": "wrong"})
+
+        error = response.data["error"]
+        self.assertEqual(error["message"], "Invalid credentials or inactive account.")
+        self.assertEqual(error["code"], "invalid_credentials")
+
+    def test_failed_login_is_filed_under_the_accounts_organization(self):
+        """So the organization's admins can see password guessing."""
+        self.client.post(LOGIN_URL, {"email": self.user.email, "password": "wrong"})
+        self.client.post(LOGIN_URL, {"email": "nobody@nowhere.test", "password": "wrong"})
+
+        entries = AuditLog.objects.filter(action=AuditLog.Action.LOGIN_FAILED)
+        by_email = {e.metadata["email"]: e.organization_id for e in entries}
+        self.assertEqual(by_email[self.user.email], self.user.organization_id)
+        self.assertIsNone(by_email["nobody@nowhere.test"])
+
     def test_login_is_recorded_once_per_attempt(self):
         """Regression: the view must not authenticate twice."""
         self.client.post(LOGIN_URL, {"email": self.user.email, "password": DEFAULT_PASSWORD})

@@ -63,7 +63,15 @@ def api_exception_handler(exc, context):
     detail = response.data
 
     if isinstance(detail, dict) and "detail" in detail and len(detail) == 1:
-        message, details = str(detail["detail"]), None
+        inner = detail["detail"]
+        # A ValidationError({"detail": "..."}) arrives as a one-item list;
+        # str() of the list would leak "[ErrorDetail(string=...)]".
+        if isinstance(inner, list) and len(inner) == 1:
+            inner = inner[0]
+        message, details = str(inner), None
+        # The specific code the raiser chose (e.g. "invalid_credentials")
+        # beats the exception class's generic one ("invalid").
+        code = getattr(inner, "code", None) or code
     elif isinstance(detail, list):
         message, details = "Invalid input.", {"non_field_errors": detail}
     else:
