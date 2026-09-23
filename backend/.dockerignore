@@ -1,0 +1,30 @@
+# Secrets never belong in an image layer — they come from env_file at runtime.
+.env
+.env.*
+!.env.example
+
+# Local state
+db.sqlite3
+*.sqlite3
+logs/
+media/
+staticfiles/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling / VCS
+.git/
+.gitignore
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
+.DS_Store

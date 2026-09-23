@@ -19,6 +19,16 @@ DATABASES = {
     }
 }
 
+# Hashed filenames so assets can be cached forever, pre-compressed so
+# WhiteNoise serves .br/.gz without doing it per request. Requires
+# collectstatic to have run — the entrypoint does it on boot.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    },
+}
+
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True
@@ -34,7 +44,7 @@ EMAIL_HOST = config("EMAIL_HOST", default="")
 EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
-EMAIL_USE_TLS = True
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
 
 # --------------------------------------------------------------------------
 # Logging — 500s must outlive the process that raised them.

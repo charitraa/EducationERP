@@ -1,0 +1,22 @@
+# Development overlay — apply on top of docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Swaps gunicorn for runserver, mounts the source tree for hot reload, and
+# points development.py at the same Postgres the production stack uses.
+services:
+  backend:
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      # development.py is SQLite-first; this opts it into the db service.
+      DEV_USE_POSTGRES: "True"
+      DEBUG: "True"
+      # runserver serves static itself, so skip the collectstatic pass and
+      # keep restarts fast.
+      RUN_COLLECTSTATIC: "False"
+    volumes:
+      - ./backend:/app
+      # Keeps container-written files out of the bind mount, where they would
+      # land in the working tree owned by the container user.
+      - error_logs:/app/logs
+      - media_files:/app/media
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]

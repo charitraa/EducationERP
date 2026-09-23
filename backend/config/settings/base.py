@@ -65,6 +65,10 @@ MIDDLEWARE = [
     # Outermost: everything below it, including failures, is logged with an id.
     "core.common.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Serves /static/ straight from the app container, so the image needs no
+    # nginx sidecar to render /admin/ and the DRF docs. No-ops when DEBUG is on
+    # and Django's own staticfiles handler takes over.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # Must sit above CommonMiddleware so preflight OPTIONS requests get the
     # CORS headers even when another middleware short-circuits the response.
     "corsheaders.middleware.CorsMiddleware",
@@ -131,9 +135,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 # because credentialed requests are rejected by the browser when it is.
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
-CORS_ALLOWED_ORIGIN_REGEXES = config(
-    "CORS_ALLOWED_ORIGIN_REGEXES", default="", cast=Csv()
-)
+
 # JWT travels in the Authorization header, not a cookie, so credentials stay
 # off by default. Flip it on only if you move refresh tokens into cookies.
 CORS_ALLOW_CREDENTIALS = config("CORS_ALLOW_CREDENTIALS", default=False, cast=bool)

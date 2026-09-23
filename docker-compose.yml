@@ -1,0 +1,67 @@
+# Production-shaped stack: Postgres + gunicorn running config.settings.production.
+#
+#   docker compose up -d --build
+#
+# For the hot-reloading development stack, overlay docker-compose.dev.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+name: education-erp
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-education_erp}
+      POSTGRES_USER: ${DB_USER:-education_erp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # The backend waits on this, so "healthy" must mean "accepting queries",
+      # not merely "process started".
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-education_erp} -d ${DB_NAME:-education_erp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Not published by default — only the backend needs it. Uncomment to
+    # inspect the database with a local client.
+    # ports:
+    #   - "5432:5432"
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      # DJANGO_SETTINGS_MODULE is read by wsgi.py before .env is parsed, so it
+      # has to be a real environment variable rather than an .env entry.
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      # Overrides .env: inside the network the database is the service name.
+      DB_HOST: db
+      DB_PORT: "5432"
+      # The container healthcheck calls /health/ over plain http on loopback.
+      # Both of these keep that from being rejected or redirected; terminate
+      # TLS and enforce https at the proxy in front of this service.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      SECURE_SSL_REDIRECT: "False"
+      LOG_DIR: /app/logs
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+    volumes:
+      # Named volumes so 500 tracebacks and uploads outlive `down` and rebuilds.
+      - error_logs:/app/logs
+      - media_files:/app/media
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+volumes:
+  postgres_data:
+  error_logs:
+  media_files:
+ 

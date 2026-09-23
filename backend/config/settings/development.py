@@ -17,12 +17,27 @@ CORS_ALLOWED_ORIGINS = config(
 )
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+# SQLite by default so the plain venv workflow needs no services running.
+# The Docker dev stack sets DEV_USE_POSTGRES=True to get the same engine as
+# production, where migrations and constraints actually behave the same.
+if config("DEV_USE_POSTGRES", default=False, cast=bool):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME"),
+            "USER": config("DB_USER"),
+            "PASSWORD": config("DB_PASSWORD"),
+            "HOST": config("DB_HOST", default="localhost"),
+            "PORT": config("DB_PORT", default="5432"),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # Copied, not mutated: `from .base import *` shares the dict object, so editing
 # it in place would also change the settings any other module sees.
@@ -47,4 +62,3 @@ EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = True
-

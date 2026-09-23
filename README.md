@@ -24,7 +24,7 @@ on is built and tested. No business modules yet — see [Roadmap](#roadmap).
 | 9 | Authentication | `core/authentication/` (JWT, access + refresh) |
 | 10 | Audit log | `core/audit/` |
 | 11 | API versioning | `/api/v1/` via `config/api_v1.py` |
-| 12 | Testing setup | `tests/`, 125 tests |
+| 12 | Testing setup | `tests/`, 142 tests |
 | 13 | API documentation | OpenAPI 3 at `/api/docs/` |
 
 ---
@@ -65,10 +65,66 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 125 tests, in-memory SQLite
+python manage.py test          # 142 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
+
+### Running with Docker
+
+This is optional. The venv workflow above needs no services. Docker is for
+anyone who wants the full stack (Postgres + the app) without installing
+Python, and it is the same image a deployment runs.
+
+Requirements: Docker Engine with the Compose v2 plugin (`docker compose`).
+
+```bash
+cp backend/.env.example backend/.env
+# Edit backend/.env and set at least:
+#   SECRET_KEY   a long random string
+#   DB_PASSWORD  any password; the Postgres container is created with it
+
+make dev        # development: runserver + hot reload, source mounted
+# or
+make up         # production-shaped: gunicorn, collectstatic, detached
+```
+
+Both stacks apply migrations and sync the permission catalogue on start.
+The API is on <http://localhost:8000> (change it with `BACKEND_PORT` in `.env`).
+Then create the first organization:
+
+```bash
+docker compose --env-file ./backend/.env exec backend \
+    python manage.py bootstrap_organization \
+    --name "Central College" --code central-college \
+    --admin-email admin@central.edu --admin-password 'Admin-pass-12345'
+```
+
+| Command | What it does |
+|---|---|
+| `make dev` | Dev stack in the foreground (`DEV_USE_POSTGRES=True`, `DEBUG=True`) |
+| `make up` / `make down` | Start detached / stop, keeping data |
+| `make logs` / `make errors` | Tail app logs / the 500 traceback log |
+| `make shell` / `make bash` | Django shell / `sh` inside the container |
+| `make migrate` / `make superuser` | Apply migrations / create an admin user |
+| `make test` | Run the suite in the container (test settings, no DB needed) |
+| `make clean` | Stop and **delete volumes, including the database** |
+
+Without `make`, run the same compose commands yourself. Always pass
+`--env-file ./backend/.env`, because Compose otherwise looks for `.env` in the
+project root. For the dev stack, also pass
+`-f docker-compose.yml -f docker-compose.dev.yml`.
+
+Notes:
+
+- `make up` runs `config.settings.production` over plain HTTP with
+  `SECURE_SSL_REDIRECT=False`. In a real deployment, put a TLS-terminating
+  proxy in front of it, set `DEBUG=False`, and set `ALLOWED_HOSTS` and
+  `CSRF_TRUSTED_ORIGINS` to the real domain.
+- Postgres is not published to the host. Uncomment `ports` under `db` in
+  `docker-compose.yml` to reach it with a local client.
+- With several replicas, set `RUN_MIGRATIONS=false` on all but one of them
+  (or on all of them, with migrations run as a separate release step).
 
 ---
 

@@ -150,6 +150,6 @@ Not in Phase 1; add when the need is real:
   reset via `POST /users/{id}/set-password/` covers the gap.
 - **File storage (`core/files/`)** — not required until modules have documents
   to store (Phase 2+). Belongs in object storage, not the database.
-- **CORS headers** — add `django-cors-headers` when a browser frontend exists.
 - **Rate limiting beyond login** — only the login endpoint is throttled.
-- **Redis, Celery, WebSockets, Docker** — deferred by design.
+- **Redis, Celery, WebSockets** — deferred by design. Docker packaging was
+  added afterwards for onboarding and deployment; see the README.
