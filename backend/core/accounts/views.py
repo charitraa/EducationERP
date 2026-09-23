@@ -15,7 +15,7 @@ from .serializers import (
     UserCreateSerializer,
     UserSerializer,
 )
-from .services import assign_role, change_password, revoke_role
+from .services import assign_role, change_password, ensure_can_manage_user, revoke_role
 
 
 @extend_schema_view(
@@ -58,6 +58,19 @@ class UserViewSet(OrganizationScopedViewSet):
         "set_password": ["users.update"],
         "deactivate": ["users.update"],
     }
+
+    # Actions that change the target account or its access. Each needs the
+    # target to be no more powerful than the caller — see ensure_can_manage_user.
+    managing_actions = {
+        "update", "partial_update", "destroy",
+        "assign_role", "revoke_role", "set_password", "deactivate",
+    }
+
+    def get_object(self):
+        user = super().get_object()
+        if self.action in self.managing_actions:
+            ensure_can_manage_user(self.request.user, user)
+        return user
 
     def get_serializer_class(self):
         if self.action == "create":

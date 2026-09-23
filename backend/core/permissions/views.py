@@ -6,7 +6,7 @@ from core.common.mixins import BaseModelViewSet
 from core.common.permissions import HasPermission, IsSameOrganization
 
 from .models import Permission, Role
-from .selectors import visible_roles_for
+from .selectors import organization_wide_permission_codes, visible_roles_for
 from .serializers import PermissionSerializer, RoleSerializer
 
 
@@ -87,4 +87,10 @@ class RoleViewSet(BaseModelViewSet):
 
         if instance.is_system:
             raise PermissionDenied("System roles cannot be deleted.")
+        if not self.request.user.is_superuser:
+            held = organization_wide_permission_codes(self.request.user)
+            if set(instance.permissions.values_list("code", flat=True)) - held:
+                raise PermissionDenied(
+                    "You can only delete roles whose permissions you hold yourself."
+                )
         super().perform_destroy(instance)

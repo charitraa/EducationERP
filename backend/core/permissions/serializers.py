@@ -43,6 +43,31 @@ class RoleSerializer(serializers.ModelSerializer):
                 "System roles are managed by the platform and cannot be modified."
             )
 
+        # Editing a role changes what everyone holding it can do, so a caller
+        # may only put in — or change a role that already has — permissions
+        # they hold organization-wide themselves.
+        request = self.context["request"]
+        if not request.user.is_superuser:
+            from .selectors import organization_wide_permission_codes
+
+            held = organization_wide_permission_codes(request.user)
+            requested = {p.code for p in attrs.get("permissions", [])}
+            existing = (
+                set(self.instance.permissions.values_list("code", flat=True))
+                if self.instance is not None
+                else set()
+            )
+            missing = (requested | existing) - held
+            if missing:
+                raise serializers.ValidationError(
+                    {
+                        "permissions": (
+                            "You can only manage roles whose permissions you hold "
+                            f"yourself. Missing: {', '.join(sorted(missing))}."
+                        )
+                    }
+                )
+
         code = attrs.get("code", getattr(self.instance, "code", None))
         request = self.context["request"]
         organization_id = (

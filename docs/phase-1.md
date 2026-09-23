@@ -72,7 +72,7 @@ repr, a `{field: {before, after}}` diff, IP, user agent and request path.
 ## Permission catalogue (Phase 1)
 
 ```
-organizations.view    organizations.create    organizations.update    organizations.delete
+organizations.view    organizations.update
 campuses.view         campuses.create         campuses.update         campuses.delete
 users.view            users.create            users.update            users.delete
 users.manage_roles
@@ -82,6 +82,28 @@ audit.view
 ```
 
 ---
+
+### Changes after Phase 1
+
+Hardening done before Phase 2 started:
+
+- **No self-promotion.** `ensure_can_grant` (accounts services): a role can be
+  granted or revoked only by someone holding all its permissions, at the same
+  scope. Role create/edit/delete follows the same rule. `ensure_can_manage_user`:
+  editing, resetting the password of, deactivating or deleting a user requires
+  holding every permission that user holds.
+- **Tenants are platform-managed.** `organizations.create` and
+  `organizations.delete` were removed; only platform superusers create or
+  delete organizations. Run `sync_permissions --prune` on existing databases.
+- **Campus-scoped roles now scope data.** `CampusScopedMixin` narrows
+  campus-owned records to the campuses where the caller holds the action's
+  permission (`campus_ids_with_permission`). Campuses themselves use it.
+- **One main campus** per organization (partial unique constraint + 400).
+- **Platform superusers** name the `organization` when creating tenant
+  records; previously this crashed.
+- **`user_type`** is now student / parent / teacher / staff / administrator.
+  Job titles moved to `StaffMember.designation`; migration `accounts.0003`
+  folds old accountant / hr / librarian values into staff.
 
 ## Conventions for Phase 2 and beyond
 

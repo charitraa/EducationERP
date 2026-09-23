@@ -4,8 +4,9 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 1 complete.** The identity foundation everything else depends
-on is built and tested. No business modules yet — see [Roadmap](#roadmap).
+**Status: Phase 2 complete.** The identity foundation (Phase 1) and the student
+foundation (Phase 2: students, enrollments, parents, staff, admissions) are
+built and tested. Next is Phase 3, academics — see [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -28,8 +29,19 @@ several branches.
 | 9 | Authentication | `core/authentication/` (JWT, access + refresh) |
 | 10 | Audit log | `core/audit/` |
 | 11 | API versioning | `/api/v1/` via `config/api_v1.py` |
-| 12 | Testing setup | `tests/`, 150 tests |
+| 12 | Testing setup | `tests/` |
 | 13 | API documentation | OpenAPI 3 at `/api/docs/` |
+
+## What Phase 2 delivers
+
+| Module | Models | What it does |
+|---|---|---|
+| `modules/students/` | `Student`, `Enrollment` | Student records; enrollment history; transfer between campuses; suspend / reactivate / graduate / withdraw |
+| `modules/parents/` | `Parent`, `StudentParent` | Parents and guardians, linked to students with a relationship and one primary contact |
+| `modules/staff/` | `StaffMember` | Staff directory: teaching / non-teaching, designation, joining and leaving |
+| `modules/admissions/` | `Admission` | Applications: pending → approved → enrolled (or rejected / withdrawn). Enrolling creates the student and guardian |
+
+Details, rules and design decisions: [`docs/phase-2.md`](docs/phase-2.md).
 
 ---
 
@@ -103,7 +115,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 150 tests, in-memory SQLite
+python manage.py test          # 266 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -210,9 +222,11 @@ Organization  (one school / college)
   `campuses.view` or `users.create`. They are defined in code and loaded with
   `manage.py sync_permissions`.
 - **Role**: a named group of permissions. Built in: `org-admin` (everything),
-  `campus-admin` (manage users and campuses), `staff` (read-only basics),
-  `student` and `parent` (empty until later phases add to them). Each
-  organization can also create its own roles.
+  `campus-admin` (manage users, campuses, students, parents, staff and
+  admissions), `staff` (read-only basics), and `student` and `parent`. These
+  last two carry no permissions: students and parents reach their own records
+  through `/students/me/` and `/parents/me/`, and more comes with later
+  phases. Each organization can also create its own roles.
 - **UserRole**: gives a role to a user, either for the whole organization or
   for one campus, optionally with an expiry date.
 - **AuditLog**: who did it, what they did, what changed (old → new), IP address
@@ -274,12 +288,20 @@ campus; old data stays on Main Campus and nothing has to be moved.
 | Person | Role | Given for | Can manage |
 |---|---|---|---|
 | Principal | `org-admin` | whole organization | everything, all branches |
-| Ram, Lalitpur head | `campus-admin` | Lalitpur Campus | users and campus settings (see [Known gaps](#known-gaps)) |
+| Ram, Lalitpur head | `campus-admin` | Lalitpur Campus | Lalitpur's students, staff, admissions and campus settings |
 | Accountant | `staff` | whole organization | read-only basics |
-| A student | `student` | their campus | nothing yet: Phase 2+ adds student features |
+| A student | `student` | their campus | their own record (`/students/me/`) |
+| A parent | `parent` | whole organization | their own profile and children (`/parents/me/`) |
 
 A role given **without** a campus counts everywhere in the organization. A role
-given **with** a campus is meant to count only there.
+given **with** a campus counts only there: Ram sees and changes Lalitpur's
+campus, students, staff and admissions, and gets 404 for the other branches.
+
+**Nobody can give themselves more power.** You can only grant, revoke or edit a
+role whose permissions you already hold, and only at the scope you hold them.
+You also can't edit, reset the password of, or deactivate a user who holds
+permissions you don't. So Ram can manage teachers and students, but not the
+principal. Only the platform superuser can create or delete organizations.
 
 ### Setting up a school
 
@@ -430,15 +452,15 @@ minute, and every login, failed login and logout is written to the audit log.
 
 ### Known gaps
 
-Fix these before a real multi-branch institution goes live:
-
-- **Campus roles are not limited to their campus yet.** A `campus-admin` for
-  Lalitpur can currently also manage Baneshwor and Bhaktapur. The permission
-  check does not know which campus a request is about, so it counts every role
-  the user holds. Single-campus schools are not affected.
-- **More than one campus can be marked as main.** Keep `is_main` on only one.
-- **`bootstrap_organization --type` is not validated**, so a typo such as
-  `--type skool` is saved as-is.
+- **Users and roles are organization-wide, not per campus.** Campus scoping
+  covers campus-owned records (campuses, students, staff, admissions). A
+  campus-scoped admin can still list every user in the organization, and
+  manage those no more powerful than themselves.
+- **Numbers are typed in, not generated.** Student, employee and application
+  numbers must be supplied; the API rejects duplicates. Automatic numbering
+  can come once institutions agree on a format.
+- **Admissions are recorded by staff.** There is no public application form
+  yet. That arrives with the Applications phase.
 
 ---
 
@@ -452,8 +474,8 @@ GET    /api/v1/auth/me/                    current user, roles, permissions
 PATCH  /api/v1/auth/me/                    update own contact details
 POST   /api/v1/auth/change-password/
 
-GET    /api/v1/organizations/              CRUD (tenant-scoped)
-GET    /api/v1/campuses/                   CRUD (tenant-scoped)
+GET    /api/v1/organizations/              view/update own; create/delete: platform superuser only
+GET    /api/v1/campuses/                   CRUD (tenant- and campus-scoped)
 
 GET    /api/v1/users/                      CRUD (tenant-scoped)
 GET    /api/v1/users/{id}/roles/
@@ -467,8 +489,29 @@ GET    /api/v1/roles/                      CRUD (system roles are read-only)
 
 GET    /api/v1/audit-logs/                 read-only trail
 
+GET    /api/v1/students/                   CRUD (campus-scoped; create opens the first enrollment)
+GET    /api/v1/students/me/                the caller's own student record
+GET    /api/v1/students/{id}/enrollments/  enrollment history
+POST   /api/v1/students/{id}/transfer/     move to another campus
+POST   /api/v1/students/{id}/change-status/  suspend / reactivate / graduate / withdraw
+
+GET    /api/v1/parents/                    CRUD (?student=<id> for a student's parents)
+GET    /api/v1/parents/me/                 the caller's own profile and children
+GET    /api/v1/parents/{id}/students/
+POST   /api/v1/parents/{id}/link-student/
+POST   /api/v1/parents/{id}/unlink-student/
+
+GET    /api/v1/staff/                      CRUD (campus-scoped)
+GET    /api/v1/staff/me/                   the caller's own staff record
+
+GET    /api/v1/admissions/                 CRUD (campus-scoped; edit only while pending)
+POST   /api/v1/admissions/{id}/approve/
+POST   /api/v1/admissions/{id}/reject/     note required
+POST   /api/v1/admissions/{id}/withdraw/
+POST   /api/v1/admissions/{id}/enroll/     creates the student (+ guardian)
+
 GET    /health/                            liveness
-GET    /ready/                             readiness (checks the database)
+GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/
 ```
 
@@ -492,7 +535,11 @@ backend/
 │   ├── authentication/ JWT login, refresh, logout, me, change-password
 │   ├── permissions/   Permission, Role, UserRole + registry and selectors
 │   └── audit/         AuditLog, context middleware, audit services
-├── modules/           Phase 2+ business modules (empty)
+├── modules/           business modules, Phase 2 onward
+│   ├── students/      Student, Enrollment
+│   ├── parents/       Parent, StudentParent
+│   ├── staff/         StaffMember
+│   └── admissions/    Admission
 ├── integrations/      biometric, payment, SMS, email, push (empty)
 └── tests/             shared factories, base test case, cross-cutting tests
 ```
@@ -503,9 +550,10 @@ Each app follows the same layout: `models` → `serializers` → `services`
 ### Five decisions worth knowing
 
 **1. One identity, many profiles.** Students, parents, teachers and staff all
-authenticate through a single `User`. Phase 2 adds `StudentProfile`,
-`StaffProfile` and so on, each pointing back at one `User` — never a second
-login system. `user_type` is descriptive; access always comes from roles.
+authenticate through a single `User`. Phase 2's `Student`, `Parent` and
+`StaffMember` records each point back at one optional `User` (a young
+student may have no login) — never a second login system. `user_type` is a
+broad label; access always comes from roles.
 
 **2. Permissions are declared in code, not typed into a database.**
 `core/permissions/registry.py` is the catalogue; `manage.py sync_permissions`
@@ -556,22 +604,28 @@ prod behave identically.
 
 ## Roadmap
 
-Phase 1 is done. Next, in order:
+Phases 1 and 2 are done. The order below is the **dependency order**: each
+phase only needs the ones before it, so nothing has to be built on
+placeholders.
 
-| Phase | Scope |
-|-------|-------|
-| **2** | Students, Parents, Staff, Admissions, Enrollment, academic structure |
-| 3 | Courses, Subjects, Timetable, Attendance engine, QR/biometric |
-| 4 | Exams, Grades, Transcripts, Report cards |
-| 5 | Fees, Invoices, Payments, Scholarships |
-| 6 | Events, Registration, Points, Achievements |
-| 7 | Library, Inventory, Transport, Hostel |
-| 8 | HR, Leave, Payroll |
-| 9 | Support, Communication, Notices, Alumni, Careers, Applications |
-| 10 | Analytics, reporting, advanced integrations |
+| Phase | Scope | Needs |
+|-------|-------|-------|
+| ~~1~~ | Identity: organizations, campuses, users, roles, permissions, audit | — |
+| ~~2~~ | Students, parents, staff, admissions, enrollment | 1 |
+| **3** | Academics: departments, programs, courses, subjects, academic years, semesters, batches, sections, rooms, timetable | 2 (teachers, enrollment) |
+| 4 | Attendance: one engine for manual / QR / biometric | 3 (a class and timetable to take attendance in) |
+| 5 | Examinations: exams, marks, grades, results, transcripts | 3 (subjects, syllabus) |
+| 6 | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
+| 7 | Events and student points | 2 |
+| 8 | Communication: notices, notifications, support tickets | 2 |
+| 9–10 | Library, inventory | 2 |
+| 11 | HR and payroll (extends `StaffMember`) | 2 |
+| 12 | Hostel and transport | 2, 6 |
+| 13 | Applications (public admission forms and other workflows) | 2 |
+| 14 | Alumni and careers (uses the graduated status) | 2 |
 
-Deferred until a real requirement justifies them: Redis, Celery, WebSockets,
-object storage, Docker, search.
+Phase 2's `Enrollment` records where and when a student studies. Phase 3 adds
+the academic placement (year, program, batch, section) to it.
 
-See [`docs/phase-1.md`](docs/phase-1.md) for the data model and the conventions
-Phase 2 should follow.
+See [`docs/phase-1.md`](docs/phase-1.md) and [`docs/phase-2.md`](docs/phase-2.md)
+for the data model and the conventions every module follows.

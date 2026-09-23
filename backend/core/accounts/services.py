@@ -8,11 +8,70 @@ from django.db import transaction
 
 from core.audit.models import AuditLog
 from core.audit.services import log
-from core.common.exceptions import ConflictError, ServiceError
+from core.common.exceptions import ConflictError, PermissionDeniedError, ServiceError
 from core.permissions.models import Role, UserRole
-from core.permissions.selectors import clear_permission_cache, roles_available_to
+from core.permissions.selectors import (
+    clear_permission_cache,
+    get_user_permission_codes,
+    organization_wide_permission_codes,
+    roles_available_to,
+)
 
 from .models import User
+
+
+# ---------------------------------------------------------------------------
+# Privilege-escalation guards
+#
+# Holding `users.manage_roles` or `users.update` must not be a path to more
+# power than the caller already has. Without these, anyone who can assign
+# roles could give themselves org-admin, and anyone who can reset passwords
+# could take over the org-admin's account.
+# ---------------------------------------------------------------------------
+def ensure_can_grant(actor: User | None, role, campus=None) -> None:
+    """``actor`` may only grant or revoke a role whose permissions they hold.
+
+    Held *at the same scope*: an organization-wide grant needs the permissions
+    organization-wide, a campus grant needs them organization-wide or at that
+    campus. ``actor=None`` is the system itself (commands, other services).
+    """
+    if actor is None or actor.is_superuser:
+        return
+
+    held = (
+        get_user_permission_codes(actor, campus=campus)
+        if campus is not None
+        else organization_wide_permission_codes(actor)
+    )
+    missing = set(role.permissions.values_list("code", flat=True)) - held
+    if missing:
+        raise PermissionDeniedError(
+            "You can only grant or revoke roles whose permissions you hold "
+            f"yourself. Missing: {', '.join(sorted(missing))}.",
+            code="role_exceeds_own_permissions",
+        )
+
+
+def ensure_can_manage_user(actor: User | None, target: User) -> None:
+    """``actor`` may only edit, reset or remove a user no more powerful.
+
+    Compares everything the target can do with everything the actor can, so
+    a campus admin can manage teachers and students but not the org-admin.
+    """
+    if actor is None or actor.is_superuser or actor.pk == target.pk:
+        return
+    if target.is_superuser:
+        raise PermissionDeniedError(
+            "Only a superuser can manage a superuser account.",
+            code="target_exceeds_own_permissions",
+        )
+
+    missing = get_user_permission_codes(target) - get_user_permission_codes(actor)
+    if missing:
+        raise PermissionDeniedError(
+            "You cannot manage a user who holds permissions you do not.",
+            code="target_exceeds_own_permissions",
+        )
 
 
 @transaction.atomic
@@ -59,6 +118,8 @@ def assign_role(
         if role is None:
             raise ServiceError(f"Unknown role '{role_code}'.", code="unknown_role")
 
+    ensure_can_grant(granted_by, role, campus)
+
     # Checked before full_clean() so a repeat grant reads as a conflict rather
     # than a generic constraint-violation validation error.
     if UserRole.objects.filter(user=user, role=role, campus=campus).exists():
@@ -90,6 +151,7 @@ def assign_role(
 
 @transaction.atomic
 def revoke_role(*, assignment: UserRole, revoked_by: User | None = None) -> None:
+    ensure_can_grant(revoked_by, assignment.role, assignment.campus)
     user, role_code = assignment.user, assignment.role.code
     campus_code = assignment.campus.code if assignment.campus_id else None
     assignment.delete()

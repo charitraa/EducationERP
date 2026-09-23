@@ -59,6 +59,47 @@ def get_user_permission_codes(user, campus=None) -> set[str]:
     return codes
 
 
+def organization_wide_permission_codes(user) -> set[str]:
+    """Codes held through assignments that are not narrowed to a campus.
+
+    What a user may do *everywhere* in their organization, as opposed to
+    ``get_user_permission_codes(user)``, which merges every assignment.
+    """
+    if not user or not user.is_authenticated or not user.is_active:
+        return set()
+    if user.is_superuser:
+        return get_user_permission_codes(user)
+
+    assignments = active_role_assignments(user).filter(campus__isnull=True)
+    return set(
+        Permission.objects.filter(roles__assignments__in=assignments)
+        .distinct()
+        .values_list("code", flat=True)
+    )
+
+
+def campus_ids_with_permission(user, code: str) -> set[int] | None:
+    """Where ``user`` holds ``code``.
+
+    ``None`` means everywhere: the permission comes from an organization-wide
+    assignment (or the user is a superuser). Otherwise the ids of the campuses
+    whose scoped assignments carry it — possibly empty.
+    """
+    if not user or not user.is_authenticated or not user.is_active:
+        return set()
+    if user.is_superuser:
+        return None
+
+    campus_ids = set(
+        active_role_assignments(user)
+        .filter(role__permissions__code=code)
+        .values_list("campus_id", flat=True)
+    )
+    if None in campus_ids:
+        return None
+    return campus_ids
+
+
 def user_has_permission(user, code: str, campus=None) -> bool:
     return code in get_user_permission_codes(user, campus=campus)
 

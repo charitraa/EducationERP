@@ -177,7 +177,9 @@ class RoleAPITests(APITestCaseBase):
         self.org = create_organization(code="roleapi-college")
         self.admin = user_with_permissions(
             self.org,
-            ["roles.view", "roles.create", "roles.update", "roles.delete"],
+            # users.view too: a role can only be given permissions its
+            # creator holds, and the tests below put users.view into roles.
+            ["roles.view", "roles.create", "roles.update", "roles.delete", "users.view"],
             email="roleadmin@test.edu",
         )
         self.authenticate(self.admin)

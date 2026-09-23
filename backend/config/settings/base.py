@@ -56,8 +56,14 @@ CORE_APPS = [
     "core.authentication",
 ]
 
-# Phase 2+ business modules get appended here as they are built.
-MODULE_APPS: list[str] = []
+# Business modules, in dependency order: each may use the ones above it.
+MODULE_APPS: list[str] = [
+    # Phase 2 — student foundation
+    "modules.students",
+    "modules.parents",
+    "modules.staff",
+    "modules.admissions",
+]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
 
@@ -204,15 +210,24 @@ SIMPLE_JWT = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "Education ERP API",
     "DESCRIPTION": (
-        "Modular education ERP platform. Phase 1 covers the identity "
-        "foundation: organizations, campuses, users, roles, permissions, "
-        "authentication and audit logs."
+        "Modular education ERP platform. Phase 1: organizations, campuses, "
+        "users, roles, permissions, authentication and audit logs. Phase 2: "
+        "students, enrollments, parents, staff and admissions."
     ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v[0-9]",
     "COMPONENT_SPLIT_REQUEST": True,
     "SORT_OPERATIONS": False,
+    # Several models have a `status` field with different choices; give each
+    # set its own name so generated clients get StudentStatus, not Status93aEnum.
+    "ENUM_NAME_OVERRIDES": {
+        "StudentStatusEnum": "modules.students.models.Student.Status",
+        "EnrollmentStatusEnum": "modules.students.models.Enrollment.Status",
+        "StaffStatusEnum": "modules.staff.models.StaffMember.Status",
+        "AdmissionStatusEnum": "modules.admissions.models.Admission.Status",
+        "RelationshipEnum": "modules.parents.models.StudentParent.Relationship",
+    },
 }
 
 # --------------------------------------------------------------------------

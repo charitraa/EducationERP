@@ -69,14 +69,16 @@ class UserCRUDTests(APITestCaseBase):
             {
                 "email": "withrole@test.edu",
                 "password": "With-role-12345",
-                "role_codes": ["staff"],
+                # A role carrying no permissions: granting one needs no more
+                # than the caller holds (see test_privilege_escalation).
+                "role_codes": ["student"],
             },
         )
 
         self.assertEqual(response.status_code, 201, response.data)
         user = User.objects.get(email="withrole@test.edu")
         self.assertEqual(
-            list(user.role_assignments.values_list("role__code", flat=True)), ["staff"]
+            list(user.role_assignments.values_list("role__code", flat=True)), ["student"]
         )
 
     def test_create_with_unknown_role_is_rejected(self):

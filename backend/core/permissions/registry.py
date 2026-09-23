@@ -4,7 +4,7 @@ Modules declare what they can do here (or call ``register_permissions`` from
 their own app config), and ``manage.py sync_permissions`` writes the catalogue
 to the database. Nothing else in the codebase should create Permission rows.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,9 @@ class RoleSpec:
 
 _PERMISSIONS: dict[str, PermissionSpec] = {}
 _ROLES: dict[str, RoleSpec] = {}
+# Extra permissions modules add to system roles declared elsewhere, so each
+# module keeps its own grants next to its own permissions.
+_ROLE_GRANTS: dict[str, set[str]] = {}
 
 
 def register_permissions(specs) -> None:
@@ -53,8 +56,19 @@ def all_permissions() -> list[PermissionSpec]:
     return sorted(_PERMISSIONS.values(), key=lambda s: (s.module, s.action))
 
 
+def grant_to_system_role(role_code: str, codes) -> None:
+    """Add a module's permissions to a system role, e.g. ``staff``."""
+    _ROLE_GRANTS.setdefault(role_code, set()).update(codes)
+
+
 def all_roles() -> list[RoleSpec]:
-    return sorted(_ROLES.values(), key=lambda s: s.code)
+    roles = []
+    for spec in _ROLES.values():
+        extra = _ROLE_GRANTS.get(spec.code)
+        if extra:
+            spec = replace(spec, permissions=tuple(sorted(set(spec.permissions) | extra)))
+        roles.append(spec)
+    return sorted(roles, key=lambda s: s.code)
 
 
 def permission_codes() -> set[str]:
@@ -77,7 +91,10 @@ def _crud(module: str, label: str, extra=()):
 
 register_permissions(
     [
-        *_crud("organizations", "organizations"),
+        # No organizations.create / .delete: onboarding and removing a tenant
+        # is restricted to platform superusers (see OrganizationViewSet).
+        PermissionSpec("organizations.view", "View organizations"),
+        PermissionSpec("organizations.update", "Update organizations"),
         *_crud("campuses", "campuses"),
         *_crud("users", "users", extra=[("manage_roles", "Assign and revoke user roles")]),
         *_crud("roles", "roles"),

@@ -47,13 +47,20 @@ class CampusSerializer(serializers.ModelSerializer):
         return value.lower()
 
     def validate(self, attrs):
-        """Campus codes are unique within an organization."""
-        organization = getattr(self.instance, "organization", None)
-        if organization is None:
-            user = self.context["request"].user
-            organization_id = user.organization_id
+        """Campus codes, and the main campus, are unique within an organization."""
+        if self.instance is not None:
+            organization_id = self.instance.organization_id
         else:
-            organization_id = organization.pk
+            organization_id = self.context["view"].get_target_organization_id()
+
+        if attrs.get("is_main"):
+            other_main = Campus.objects.filter(organization_id=organization_id, is_main=True)
+            if self.instance is not None:
+                other_main = other_main.exclude(pk=self.instance.pk)
+            if other_main.exists():
+                raise serializers.ValidationError(
+                    {"is_main": "This organization already has a main campus. Unset it first."}
+                )
 
         code = attrs.get("code", getattr(self.instance, "code", None))
         if code and organization_id:

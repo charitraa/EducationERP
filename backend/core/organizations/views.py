@@ -1,8 +1,8 @@
 from django.db.models import Count, Q
 from drf_spectacular.utils import extend_schema, extend_schema_view
 
-from core.common.mixins import BaseModelViewSet, OrganizationScopedViewSet
-from core.common.permissions import HasPermission, IsSameOrganization
+from core.common.mixins import BaseModelViewSet, CampusScopedViewSet
+from core.common.permissions import HasPermission, IsPlatformAdmin, IsSameOrganization
 
 from .models import Campus, Organization
 from .serializers import (
@@ -43,11 +43,19 @@ class OrganizationViewSet(BaseModelViewSet):
     required_permissions = {
         "list": ["organizations.view"],
         "retrieve": ["organizations.view"],
-        "create": ["organizations.create"],
         "update": ["organizations.update"],
         "partial_update": ["organizations.update"],
-        "destroy": ["organizations.delete"],
+        # create and destroy: platform superusers only, see get_permissions.
     }
+
+    def get_permissions(self):
+        # Onboarding and removing a tenant is a platform decision. Without
+        # this, org-admin (which holds every permission) could create stray
+        # organizations it can't even see, or delete its own and lock every
+        # user out.
+        if self.action in ("create", "destroy"):
+            return [IsPlatformAdmin()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action in ("update", "partial_update"):
@@ -72,10 +80,15 @@ class OrganizationViewSet(BaseModelViewSet):
     partial_update=extend_schema(tags=["organizations"], summary="Update a campus"),
     destroy=extend_schema(tags=["organizations"], summary="Soft-delete a campus"),
 )
-class CampusViewSet(OrganizationScopedViewSet):
-    """Physical locations within an organization."""
+class CampusViewSet(CampusScopedViewSet):
+    """Physical locations within an organization.
+
+    A role scoped to one campus reaches only that campus here, like any other
+    campus-owned record; the campus is its own scope.
+    """
 
     queryset = Campus.objects.select_related("organization")
+    campus_field = "pk"
     serializer_class = CampusSerializer
     audit_module = "organizations"
     filterset_fields = ["is_active", "is_main", "city"]
@@ -90,3 +103,14 @@ class CampusViewSet(OrganizationScopedViewSet):
         "partial_update": ["campuses.update"],
         "destroy": ["campuses.delete"],
     }
+
+    def perform_create(self, serializer):
+        # A new campus is outside every campus scope, so only an
+        # organization-wide grant can create one.
+        from rest_framework.exceptions import PermissionDenied
+
+        from core.permissions.selectors import campus_ids_with_permission
+
+        if campus_ids_with_permission(self.request.user, "campuses.create") is not None:
+            raise PermissionDenied("Creating a campus needs an organization-wide role.")
+        super().perform_create(serializer)

@@ -63,3 +63,64 @@ def user_with_permissions(organization, permissions, email="perm@test.edu", **kw
     )
     grant(user, role)
     return user
+
+
+def user_with_system_role(
+    organization, role_code, email="role@test.edu", campus=None, **kwargs
+) -> User:
+    """A user holding one of the shipped roles (org-admin, campus-admin, ...).
+
+    Needs the catalogue synced first — APITestCaseBase does that.
+    """
+    user = create_user(organization=organization, email=email, **kwargs)
+    grant(user, Role.objects.get(code=role_code, organization=None), campus=campus)
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Phase 2
+# ---------------------------------------------------------------------------
+def create_student(campus, student_number="S-001", **fields):
+    """Through the service, so the first enrollment is opened like in real use."""
+    from modules.students.services import create_student as create
+
+    fields.setdefault("first_name", "Test")
+    fields.setdefault("last_name", "Student")
+    return create(
+        organization_id=campus.organization_id,
+        campus=campus,
+        student_number=student_number,
+        **fields,
+    )
+
+
+def create_parent(organization, first_name="Test", **fields):
+    from modules.parents.models import Parent
+
+    return Parent.objects.create(organization=organization, first_name=first_name, **fields)
+
+
+def create_staff_member(campus, employee_number="E-001", **fields):
+    from modules.staff.models import StaffMember
+
+    fields.setdefault("first_name", "Test")
+    fields.setdefault("last_name", "Staff")
+    return StaffMember.objects.create(
+        organization_id=campus.organization_id,
+        campus=campus,
+        employee_number=employee_number,
+        **fields,
+    )
+
+
+def create_admission(campus, application_number="A-001", **fields):
+    from modules.admissions.models import Admission
+
+    fields.setdefault("first_name", "Test")
+    fields.setdefault("last_name", "Applicant")
+    return Admission.objects.create(
+        organization_id=campus.organization_id,
+        campus=campus,
+        application_number=application_number,
+        **fields,
+    )

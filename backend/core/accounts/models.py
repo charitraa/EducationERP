@@ -17,13 +17,17 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel, SoftDeleteModel
     """
 
     class Type(models.TextChoices):
+        """A broad label only — never a source of access (roles are).
+
+        Job titles such as accountant or librarian are deliberately absent:
+        they belong on the staff profile (``StaffMember.designation``), which
+        can grow without a schema change.
+        """
+
         STUDENT = "student", "Student"
         PARENT = "parent", "Parent"
         TEACHER = "teacher", "Teacher"
         STAFF = "staff", "Staff"
-        ACCOUNTANT = "accountant", "Accountant"
-        HR = "hr", "HR"
-        LIBRARIAN = "librarian", "Librarian"
         ADMINISTRATOR = "administrator", "Administrator"
 
     email = models.EmailField(unique=True, db_index=True)

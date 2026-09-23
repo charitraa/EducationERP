@@ -86,6 +86,11 @@ class Campus(BaseModel):
                 condition=models.Q(deleted_at__isnull=True),
                 name="uniq_campus_code_per_organization",
             ),
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(is_main=True, deleted_at__isnull=True),
+                name="uniq_main_campus_per_organization",
+            ),
         ]
 
     def __str__(self):

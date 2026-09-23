@@ -22,7 +22,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--name", required=True)
         parser.add_argument("--code", required=True)
-        parser.add_argument("--type", default=Organization.Type.COLLEGE)
+        parser.add_argument(
+            "--type", default=Organization.Type.COLLEGE, choices=Organization.Type.values
+        )
         parser.add_argument("--campus-name", default="Main Campus")
         parser.add_argument("--campus-code", default="main")
         parser.add_argument("--admin-email", required=True)
@@ -35,6 +37,13 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         code = options["code"].lower()
+        # Checked here too: argparse `choices` only applies on the command
+        # line, not when the command is called from code via call_command().
+        if options["type"] not in Organization.Type.values:
+            raise CommandError(
+                f"Unknown type '{options['type']}'. "
+                f"Choose one of: {', '.join(Organization.Type.values)}."
+            )
         if Organization.all_objects.filter(code=code).exists():
             raise CommandError(f"Organization '{code}' already exists.")
 

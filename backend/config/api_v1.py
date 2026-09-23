@@ -12,4 +12,9 @@ urlpatterns = [
     path("", include("core.accounts.urls")),
     path("", include("core.permissions.urls")),
     path("", include("core.audit.urls")),
+    # Phase 2
+    path("", include("modules.students.urls")),
+    path("", include("modules.parents.urls")),
+    path("", include("modules.staff.urls")),
+    path("", include("modules.admissions.urls")),
 ]
