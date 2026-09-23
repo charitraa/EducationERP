@@ -1,4 +1,6 @@
-"""Local development settings — SQLite, debug on, permissive hosts."""
+"""Local development settings — debug on, permissive hosts, choice of database."""
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
 from .base import BASE_DIR, REST_FRAMEWORK as BASE_REST_FRAMEWORK, config
 
@@ -17,27 +19,51 @@ CORS_ALLOWED_ORIGINS = config(
 )
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
-# SQLite by default so the plain venv workflow needs no services running.
-# The Docker dev stack sets DEV_USE_POSTGRES=True to get the same engine as
-# production, where migrations and constraints actually behave the same.
-if config("DEV_USE_POSTGRES", default=False, cast=bool):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": config("DB_NAME"),
-            "USER": config("DB_USER"),
-            "PASSWORD": config("DB_PASSWORD"),
-            "HOST": config("DB_HOST", default="localhost"),
-            "PORT": config("DB_PORT", default="5432"),
-        }
-    }
-else:
+# mysql    — the team's local dev database (MySQL 8.4+ / MariaDB 10.6+).
+#            Caveat: MySQL cannot enforce conditional unique constraints
+#            (models.W036), so rules such as "campus code unique among
+#            non-deleted campuses" are only checked by the serializers here
+#            and by the database in production. Duplicates dev accepts,
+#            production rejects.
+# postgres — same engine as production; the Docker dev stack uses this.
+# sqlite   — no server needed; the fallback when nothing is configured.
+DEV_DATABASE = config("DEV_DATABASE", default="sqlite").lower()
+
+if DEV_DATABASE == "sqlite":
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+elif DEV_DATABASE in ("mysql", "postgres"):
+    DATABASES = {
+        "default": {
+            "ENGINE": {
+                "mysql": "django.db.backends.mysql",
+                "postgres": "django.db.backends.postgresql",
+            }[DEV_DATABASE],
+            "NAME": config("DB_NAME"),
+            "USER": config("DB_USER"),
+            "PASSWORD": config("DB_PASSWORD"),
+            "HOST": config("DB_HOST", default="localhost"),
+            # Blank means the engine's own default: 3306 / 5432.
+            "PORT": config("DB_PORT", default=""),
+        }
+    }
+    if DEV_DATABASE == "mysql":
+        DATABASES["default"]["OPTIONS"] = {
+            # utf8mb4, not MySQL's 3-byte "utf8": names with emoji or some
+            # scripts would otherwise fail to save.
+            "charset": "utf8mb4",
+            # Strict mode rejects over-long or invalid values instead of
+            # silently truncating them, which is what Postgres does too.
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+        }
+else:
+    raise ImproperlyConfigured(
+        f"DEV_DATABASE must be mysql, postgres or sqlite, not {DEV_DATABASE!r}."
+    )
 
 # File-based so cached values and throttle counts survive a runserver reload
 # and are shared by every process, without running Redis locally. Blank
