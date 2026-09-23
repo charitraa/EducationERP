@@ -57,6 +57,7 @@ class UserViewSet(OrganizationScopedViewSet):
         "revoke_role": ["users.manage_roles"],
         "set_password": ["users.update"],
         "deactivate": ["users.update"],
+        "reset_two_factor": ["users.update"],
     }
 
     # Actions that change the target account or its access. Each needs the
@@ -64,6 +65,7 @@ class UserViewSet(OrganizationScopedViewSet):
     managing_actions = {
         "update", "partial_update", "destroy",
         "assign_role", "revoke_role", "set_password", "deactivate",
+        "reset_two_factor",
     }
 
     def get_object(self):
@@ -162,3 +164,16 @@ class UserViewSet(OrganizationScopedViewSet):
 
         user = deactivate_user(user=self.get_object(), deactivated_by=request.user)
         return Response(UserSerializer(user, context=self.get_serializer_context()).data)
+
+    @extend_schema(
+        tags=["users"],
+        summary="Turn off a user's two-factor login (e.g. lost phone)",
+        request=None,
+        responses={204: None},
+    )
+    @action(detail=True, methods=["post"], url_path="reset-2fa")
+    def reset_two_factor(self, request, pk=None):
+        from core.authentication.two_factor import disable
+
+        disable(self.get_object(), by=request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)

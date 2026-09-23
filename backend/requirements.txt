@@ -6,6 +6,12 @@ django-filter==26.1
 django-cors-headers==4.9.0
 python-decouple==3.8
 whitenoise[brotli]==6.11.0
+# Swagger UI / Redoc files served from our own static files instead of a
+# CDN, so the docs work under a strict Content-Security-Policy and can't be
+# changed by a third party.
+drf-spectacular-sidecar==2026.9.1
+# Time-based one-time codes for two-factor login.
+pyotp==2.10.0
 
 # Production only
 psycopg[binary]>=3.2 ; sys_platform != "win32"

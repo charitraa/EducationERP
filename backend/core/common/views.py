@@ -2,14 +2,17 @@ from django.core.cache import cache
 from django.db import connection
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 
+# Probes are exempt from rate limiting: a load balancer checking every few
+# seconds from one address must never be told the app is down because of 429s.
 @extend_schema(tags=["system"], responses={200: dict})
 @api_view(["GET"])
 @permission_classes([AllowAny])
+@throttle_classes([])
 def health(request):
     """Liveness probe — the process is up and serving."""
     return Response({"status": "ok"})
@@ -18,6 +21,7 @@ def health(request):
 @extend_schema(tags=["system"], responses={200: dict, 503: dict})
 @api_view(["GET"])
 @permission_classes([AllowAny])
+@throttle_classes([])
 def ready(request):
     """Readiness probe — dependencies (database and cache) are reachable."""
     checks = {}

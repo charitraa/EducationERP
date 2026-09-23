@@ -5,10 +5,20 @@ from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
-    SpectacularSwaggerView,
+    SpectacularSwaggerSplitView,
 )
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from core.common.permissions import ApiDocsAccess
 from core.common.views import health, ready
+
+# Session auth too, so a staff member logged in at /admin/ can open the docs
+# in a browser when they are not public.
+_docs = {
+    "permission_classes": [ApiDocsAccess],
+    "authentication_classes": [SessionAuthentication, JWTAuthentication],
+}
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -16,13 +26,15 @@ urlpatterns = [
     # v1 URLs never change shape once clients depend on them.
     path("api/v1/", include(("config.api_v1", "v1"), namespace="v1")),
     # Documentation
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/schema/", SpectacularAPIView.as_view(**_docs), name="schema"),
+    # The split view loads its script from a URL instead of inline, which a
+    # strict Content-Security-Policy requires.
     path(
         "api/docs/",
-        SpectacularSwaggerView.as_view(url_name="schema"),
+        SpectacularSwaggerSplitView.as_view(url_name="schema", **_docs),
         name="swagger-ui",
     ),
-    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema", **_docs), name="redoc"),
     # Probes
     path("health/", health, name="health"),
     path("ready/", ready, name="ready"),

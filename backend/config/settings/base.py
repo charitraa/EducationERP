@@ -8,6 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
+from django.utils.csp import CSP
 
 # backend/config/settings/base.py -> backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -29,7 +30,8 @@ AUTH_USER_MODEL = "accounts.User"
 # Applications
 # --------------------------------------------------------------------------
 DJANGO_APPS = [
-    "django.contrib.admin",
+    # django.contrib.admin, with the login limit and two-factor step added.
+    "core.authentication.admin_config.ERPAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -43,6 +45,7 @@ THIRD_PARTY_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
+    "drf_spectacular_sidecar",
     "drf_spectacular",
 ]
 
@@ -71,6 +74,8 @@ MIDDLEWARE = [
     # Outermost: everything below it, including failures, is logged with an id.
     "core.common.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Sends SECURE_CSP / SECURE_CSP_REPORT_ONLY (set per environment).
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
     # Serves /static/ straight from the app container, so the image needs no
     # nginx sidecar to render /admin/ and the DRF docs. No-ops when DEBUG is on
     # and Django's own staticfiles handler takes over.
@@ -95,6 +100,8 @@ TEMPLATES = [
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
+                # Nonces for the admin's own <script> tags under CSP.
+                "django.template.context_processors.csp",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
             ],
@@ -180,13 +187,28 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "core.common.exceptions.api_exception_handler",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
+    # How many proxies sit in front of the app (load balancer, nginx). The
+    # client IP used for rate limiting and the audit log is read from the
+    # X-Forwarded-For entries those proxies added. Left unset, DRF trusted
+    # the whole header — which the client writes — so sending a different
+    # fake value per request bypassed the login limit.
+    "NUM_PROXIES": config("NUM_PROXIES", default=0, cast=int),
     "DEFAULT_VERSION": "v1",
     "ALLOWED_VERSIONS": ("v1",),
+    # Counters live in the cache: Redis in production, so every worker and
+    # replica shares one count; a file cache in development.
     "DEFAULT_THROTTLE_CLASSES": (
+        # Per-endpoint limits for views that set throttle_scope (login).
         "rest_framework.throttling.ScopedRateThrottle",
+        # A ceiling on everything else, so a stolen token or a script cannot
+        # copy out the whole student list in seconds.
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
     ),
     "DEFAULT_THROTTLE_RATES": {
         "login": config("THROTTLE_LOGIN", default="10/min"),
+        "anon": config("THROTTLE_ANON", default="60/min"),
+        "user": config("THROTTLE_USER", default="600/min"),
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -221,6 +243,12 @@ SPECTACULAR_SETTINGS = {
     "SORT_OPERATIONS": False,
     # Several models have a `status` field with different choices; give each
     # set its own name so generated clients get StudentStatus, not Status93aEnum.
+    # Swagger UI and Redoc files come from our own static files
+    # (drf-spectacular-sidecar), not a CDN: nothing a third party can change,
+    # and the pages work under the Content-Security-Policy below.
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
     "ENUM_NAME_OVERRIDES": {
         "StudentStatusEnum": "modules.students.models.Student.Status",
         "EnrollmentStatusEnum": "modules.students.models.Enrollment.Status",
@@ -228,6 +256,43 @@ SPECTACULAR_SETTINGS = {
         "AdmissionStatusEnum": "modules.admissions.models.Admission.Status",
         "RelationshipEnum": "modules.parents.models.StudentParent.Relationship",
     },
+}
+
+# --------------------------------------------------------------------------
+# Login protection — see core/authentication/lockout.py
+# --------------------------------------------------------------------------
+# Failures on one account (from any address) before it is locked, and how
+# long it stays locked after the last failure.
+LOGIN_LOCKOUT_ATTEMPTS = config("LOGIN_LOCKOUT_ATTEMPTS", default=5, cast=int)
+LOGIN_LOCKOUT_MINUTES = config("LOGIN_LOCKOUT_MINUTES", default=15, cast=int)
+
+# --------------------------------------------------------------------------
+# API documentation access
+# --------------------------------------------------------------------------
+# Off: /api/schema/, /api/docs/ and /api/redoc/ are for staff users only
+# (log in at /admin/ first). Development turns this on.
+API_DOCS_PUBLIC = config("API_DOCS_PUBLIC", default=False, cast=bool)
+
+# --------------------------------------------------------------------------
+# Content-Security-Policy — enforced in production, report-only in
+# development. The API itself returns JSON; this protects the HTML pages it
+# serves (the admin and the API docs).
+# --------------------------------------------------------------------------
+CSP_POLICY = {
+    "default-src": [CSP.SELF],
+    # Scripts only from our own static files, plus the admin's nonced tags.
+    "script-src": [CSP.SELF, CSP.NONCE],
+    # Swagger UI and Redoc set inline style attributes; nonces can't cover
+    # those. Inline styles cannot run code, so this stays low-risk.
+    "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],
+    "img-src": [CSP.SELF, "data:"],
+    "font-src": [CSP.SELF, "data:"],
+    "connect-src": [CSP.SELF],
+    "worker-src": [CSP.SELF, "blob:"],
+    "object-src": [CSP.NONE],
+    "base-uri": [CSP.SELF],
+    "form-action": [CSP.SELF],
+    "frame-ancestors": [CSP.NONE],
 }
 
 # --------------------------------------------------------------------------

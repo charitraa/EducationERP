@@ -65,6 +65,20 @@ class HasPermission(BasePermission):
         return all(code in held for code in required)
 
 
+class ApiDocsAccess(BasePermission):
+    """The schema and docs pages: open when ``API_DOCS_PUBLIC`` is on,
+    otherwise staff only. A published schema is a map of every endpoint, so
+    production keeps it to people who work on the system."""
+
+    def has_permission(self, request, view):
+        from django.conf import settings
+
+        if settings.API_DOCS_PUBLIC:
+            return True
+        user = request.user
+        return bool(user and user.is_authenticated and user.is_staff)
+
+
 class IsPlatformAdmin(BasePermission):
     """Only platform superusers (no organization of their own)."""
 

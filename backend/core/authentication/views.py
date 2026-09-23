@@ -15,7 +15,17 @@ from core.accounts.serializers import (
 )
 from core.accounts.services import change_password
 
-from .serializers import LoginSerializer, LogoutSerializer
+from . import two_factor
+from .serializers import (
+    LoginSerializer,
+    LogoutSerializer,
+    RecoveryCodesSerializer,
+    TwoFactorCodeSerializer,
+    TwoFactorDisableSerializer,
+    TwoFactorSetupResponseSerializer,
+    TwoFactorSetupSerializer,
+    TwoFactorStatusSerializer,
+)
 
 
 @extend_schema(tags=["auth"], summary="Log in and obtain a token pair")
@@ -126,4 +136,77 @@ class ChangePasswordView(GenericAPIView):
             user=request.user,
             new_password=serializer.validated_data["new_password"],
         )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Two-factor login (authenticator app)
+# ---------------------------------------------------------------------------
+class TwoFactorStatusView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["auth"], summary="Is two-factor login on for me?", responses={200: TwoFactorStatusSerializer})
+    def get(self, request):
+        return Response(two_factor.status(request.user))
+
+
+class TwoFactorSetupView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TwoFactorSetupSerializer
+
+    @extend_schema(
+        tags=["auth"],
+        summary="Start two-factor setup: returns the secret to add to an authenticator app",
+        responses={200: TwoFactorSetupResponseSerializer},
+    )
+    def post(self, request):
+        self.get_serializer(data=request.data).is_valid(raise_exception=True)
+        secret, uri = two_factor.begin_setup(request.user)
+        return Response({"secret": secret, "otpauth_uri": uri})
+
+
+class TwoFactorConfirmView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TwoFactorCodeSerializer
+
+    @extend_schema(
+        tags=["auth"],
+        summary="Finish setup with a code from the app; returns recovery codes (shown once)",
+        responses={200: RecoveryCodesSerializer},
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        codes = two_factor.confirm_setup(request.user, serializer.validated_data["code"])
+        return Response({"recovery_codes": codes})
+
+
+class TwoFactorRecoveryCodesView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TwoFactorCodeSerializer
+
+    @extend_schema(
+        tags=["auth"],
+        summary="Replace all recovery codes (needs a current app code)",
+        responses={200: RecoveryCodesSerializer},
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not two_factor.verify(request.user, serializer.validated_data["code"]):
+            return Response(
+                {"error": {"code": "invalid_otp", "message": "That two-factor code is not valid.", "details": None}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({"recovery_codes": two_factor.regenerate_recovery_codes(request.user)})
+
+
+class TwoFactorDisableView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TwoFactorDisableSerializer
+
+    @extend_schema(tags=["auth"], summary="Turn two-factor login off (needs password and a code)", responses={204: None})
+    def post(self, request):
+        self.get_serializer(data=request.data).is_valid(raise_exception=True)
+        two_factor.disable(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

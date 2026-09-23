@@ -24,7 +24,11 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 # throttling test lowers the rate itself.
 REST_FRAMEWORK = {  # noqa: F405
     **BASE_REST_FRAMEWORK,
-    "DEFAULT_THROTTLE_RATES": {"login": "10000/min"},
+    "DEFAULT_THROTTLE_RATES": {"login": "10000/min", "anon": "10000/min", "user": "10000/min"},
 }
+
+# Like the throttles above: effectively off, so tests that log in often don't
+# lock their accounts. The lockout tests lower it themselves.
+LOGIN_LOCKOUT_ATTEMPTS = 10000
 
 LOGGING = {"version": 1, "disable_existing_loggers": False, "root": {"handlers": []}}

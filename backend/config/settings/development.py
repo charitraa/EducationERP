@@ -104,3 +104,10 @@ EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = True
+
+# Docs open to anyone locally; staff-only elsewhere (see base.py).
+API_DOCS_PUBLIC = config("API_DOCS_PUBLIC", default=True, cast=bool)
+
+# Report-only: the browser console shows what production would block,
+# without breaking Django's debug pages, which use inline scripts.
+SECURE_CSP_REPORT_ONLY = CSP_POLICY  # noqa: F405

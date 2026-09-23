@@ -2,10 +2,24 @@
 import copy
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
 from .base import BASE_DIR, LOGGING as BASE_LOGGING, config
 
 DEBUG = False
+
+# The key signs every JWT and session. base.py falls back to a published
+# placeholder so development works out of the box; production must never
+# inherit it, or anyone who has read this repository can forge a login.
+SECRET_KEY = config("SECRET_KEY", default="")
+_PLACEHOLDER_PREFIXES = ("django-insecure", "insecure-", "change-me")
+if len(SECRET_KEY) < 50 or SECRET_KEY.startswith(_PLACEHOLDER_PREFIXES):
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be set to a random value of at least 50 characters in "
+        "production. Generate one with: python -c \"from django.core.management."
+        "utils import get_random_secret_key as k; print(k())\""
+    )
 
 DATABASES = {
     "default": {
@@ -46,6 +60,8 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
     },
 }
+
+SECURE_CSP = CSP_POLICY  # noqa: F405
 
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

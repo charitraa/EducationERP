@@ -71,6 +71,10 @@ class APIVersioningTests(APITestCaseBase):
 
 class SchemaTests(APITestCaseBase):
     def test_openapi_schema_generates(self):
+        # Docs are staff-only unless API_DOCS_PUBLIC (see tests/test_security.py).
+        from tests.factories import create_user
+
+        self.client.force_login(create_user(email="staff@test.edu", is_staff=True))
         response = self.client.get("/api/schema/")
 
         self.assertEqual(response.status_code, 200)

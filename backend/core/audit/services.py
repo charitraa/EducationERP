@@ -155,3 +155,28 @@ def log_delete(request, instance, module: str = "") -> AuditLog | None:
         changes={k: {"before": v, "after": None} for k, v in snapshot(instance).items()},
         request=request,
     )
+
+
+def log_login_failure(email, reason: str, request=None) -> AuditLog | None:
+    """Record a failed login attempt: wrong password, wrong code or locked.
+
+    Filed under the account's organization so its admins see password
+    guessing against their users. An unknown email stays platform-level —
+    no tenant owns it — and the caller learns nothing either way.
+    """
+    from django.contrib.auth import get_user_model
+
+    email = (email or "").lower().strip()
+    organization_id = (
+        get_user_model()
+        .all_objects.filter(email=email)
+        .values_list("organization_id", flat=True)
+        .first()
+    )
+    return log(
+        AuditLog.Action.LOGIN_FAILED,
+        module="authentication",
+        organization=organization_id,
+        metadata={"email": email, "reason": reason},
+        request=request or get_current_request(),
+    )
