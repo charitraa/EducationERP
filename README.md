@@ -4,9 +4,10 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 2 complete.** The identity foundation (Phase 1) and the student
-foundation (Phase 2: students, enrollments, parents, staff, admissions) are
-built and tested. Next is Phase 3, academics — see [Roadmap](#roadmap).
+**Status: Phase 3a complete.** Identity (Phase 1), the student foundation
+(Phase 2) and the academic structure (Phase 3a: programs, subjects, curriculum,
+academic years, sections, teaching assignments, student placement) are built
+and tested. Next is Phase 3b, the timetable — see [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -42,6 +43,21 @@ several branches.
 | `modules/admissions/` | `Admission` | Applications: pending → approved → enrolled (or rejected / withdrawn). Enrolling creates the student and guardian |
 
 Details, rules and design decisions: [`docs/phase-2.md`](docs/phase-2.md).
+
+## What Phase 3a delivers
+
+One model for schools (Grade 1–10), +2 colleges (Grade 11–12) and universities
+(Semester 1–8): a **program** has numbered levels, and a **section** is one
+class group at one level, for one academic year, at one campus.
+
+| Area | Models |
+|---|---|
+| Structure (organization-wide) | `Department`, `Program`, `Subject`, `CurriculumSubject`, `AcademicYear`, `Term` |
+| Classes (per campus) | `Room`, `Batch`, `Section`, `TeachingAssignment` |
+| Placement | `Enrollment.section`: every section a student has been in stays in their history |
+
+Year names are free text, so `2082/83` works; dates are stored in AD.
+Details: [`docs/phase-3.md`](docs/phase-3.md).
 
 ---
 
@@ -115,7 +131,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 303 tests, in-memory SQLite
+python manage.py test          # 354 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -554,6 +570,12 @@ POST   /api/v1/admissions/{id}/reject/     note required
 POST   /api/v1/admissions/{id}/withdraw/
 POST   /api/v1/admissions/{id}/enroll/     creates the student (+ guardian)
 
+GET    /api/v1/departments/  programs/  subjects/  curriculum/      CRUD (organization-wide)
+GET    /api/v1/academic-years/  terms/                              CRUD; POST academic-years/{id}/set-current/
+GET    /api/v1/rooms/  batches/  sections/  teaching-assignments/   CRUD (campus-scoped)
+GET    /api/v1/sections/{id}/students/                              who is in a class
+POST   /api/v1/students/{id}/place/                                 place / promote / move a student
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -583,7 +605,9 @@ backend/
 │   ├── students/      Student, Enrollment
 │   ├── parents/       Parent, StudentParent
 │   ├── staff/         StaffMember
-│   └── admissions/    Admission
+│   ├── admissions/    Admission
+│   └── academics/     Department, Program, Subject, curriculum, years, terms,
+│                      Room, Batch, Section, TeachingAssignment
 ├── integrations/      biometric, payment, SMS, email, push (empty)
 └── tests/             shared factories, base test case, cross-cutting tests
 ```
@@ -648,7 +672,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1 and 2 are done. The order below is the **dependency order**: each
+Phases 1, 2 and 3a are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -656,7 +680,8 @@ placeholders.
 |-------|-------|-------|
 | ~~1~~ | Identity: organizations, campuses, users, roles, permissions, audit | — |
 | ~~2~~ | Students, parents, staff, admissions, enrollment | 1 |
-| **3** | Academics: departments, programs, courses, subjects, academic years, semesters, batches, sections, rooms, timetable | 2 (teachers, enrollment) |
+| ~~3a~~ | Academics: departments, programs, subjects, curriculum, years, terms, batches, sections, rooms, teaching assignments, placement | 2 (teachers, enrollment) |
+| **3b** | Timetable: periods, weekly schedule, clash detection | 3a |
 | 4 | Attendance: one engine for manual / QR / biometric | 3 (a class and timetable to take attendance in) |
 | 5 | Examinations: exams, marks, grades, results, transcripts | 3 (subjects, syllabus) |
 | 6 | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
@@ -668,8 +693,6 @@ placeholders.
 | 13 | Applications (public admission forms and other workflows) | 2 |
 | 14 | Alumni and careers (uses the graduated status) | 2 |
 
-Phase 2's `Enrollment` records where and when a student studies. Phase 3 adds
-the academic placement (year, program, batch, section) to it.
-
-See [`docs/phase-1.md`](docs/phase-1.md) and [`docs/phase-2.md`](docs/phase-2.md)
-for the data model and the conventions every module follows.
+See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md) and
+[`docs/phase-3.md`](docs/phase-3.md) for the data model and the conventions
+every module follows.
