@@ -21,6 +21,12 @@ class HealthEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["checks"]["database"], "ok")
 
+    def test_ready_checks_the_cache(self):
+        response = self.client.get("/ready/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["checks"]["cache"], "ok")
+
 
 class ErrorEnvelopeTests(APITestCaseBase):
     """Every failure uses the same response shape so clients can rely on it."""

@@ -39,6 +39,17 @@ else:
         }
     }
 
+# File-based so cached values and throttle counts survive a runserver reload
+# and are shared by every process, without running Redis locally. Blank
+# CACHE_DIR means backend/.cache/, which is gitignored.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": config("CACHE_DIR", default="") or str(BASE_DIR / ".cache"),
+        "TIMEOUT": 300,
+    }
+}
+
 # Copied, not mutated: `from .base import *` shares the dict object, so editing
 # it in place would also change the settings any other module sees.
 REST_FRAMEWORK = {

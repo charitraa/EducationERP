@@ -24,7 +24,7 @@ on is built and tested. No business modules yet — see [Roadmap](#roadmap).
 | 9 | Authentication | `core/authentication/` (JWT, access + refresh) |
 | 10 | Audit log | `core/audit/` |
 | 11 | API versioning | `/api/v1/` via `config/api_v1.py` |
-| 12 | Testing setup | `tests/`, 142 tests |
+| 12 | Testing setup | `tests/`, 143 tests |
 | 13 | API documentation | OpenAPI 3 at `/api/docs/` |
 
 ---
@@ -65,7 +65,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 142 tests, in-memory SQLite
+python manage.py test          # 143 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -73,7 +73,7 @@ python manage.py test          # 142 tests, in-memory SQLite
 ### Running with Docker
 
 This is optional. The venv workflow above needs no services. Docker is for
-anyone who wants the full stack (Postgres + the app) without installing
+anyone who wants the full stack (Postgres + Redis + the app) without installing
 Python, and it is the same image a deployment runs.
 
 Requirements: Docker Engine with the Compose v2 plugin (`docker compose`).
@@ -121,7 +121,11 @@ Notes:
   `SECURE_SSL_REDIRECT=False`. In a real deployment, put a TLS-terminating
   proxy in front of it, set `DEBUG=False`, and set `ALLOWED_HOSTS` and
   `CSRF_TRUSTED_ORIGINS` to the real domain.
-- Postgres is not published to the host. Uncomment `ports` under `db` in
+- Caching: production uses Redis (`REDIS_URL`, required). Development uses a
+  file-based cache in `backend/.cache/` (`CACHE_DIR`), so no Redis is needed
+  locally. Tests use an in-memory cache. The dev Docker stack still starts the
+  `redis` service, but development settings don't use it.
+- Postgres and Redis are not published to the host. Uncomment `ports` under `db` in
   `docker-compose.yml` to reach it with a local client.
 - With several replicas, set `RUN_MIGRATIONS=false` on all but one of them
   (or on all of them, with migrations run as a separate release step).

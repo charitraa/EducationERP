@@ -10,3 +10,4 @@ whitenoise[brotli]==6.11.0
 # Production only
 psycopg[binary]>=3.2 ; sys_platform != "win32"
 gunicorn>=23.0
+redis>=6.0

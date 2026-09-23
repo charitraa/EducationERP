@@ -13,6 +13,9 @@ services:
       # runserver serves static itself, so skip the collectstatic pass and
       # keep restarts fast.
       RUN_COLLECTSTATIC: "False"
+      # development.py uses the file cache, not Redis. /tmp keeps it out of
+      # the bind-mounted source tree and the container user can write there.
+      CACHE_DIR: /tmp/django_cache
     volumes:
       - ./backend:/app
       # Keeps container-written files out of the bind mount, where they would

@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from django.db import connection
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -18,7 +19,7 @@ def health(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def ready(request):
-    """Readiness probe — dependencies (currently the database) are reachable."""
+    """Readiness probe — dependencies (database and cache) are reachable."""
     checks = {}
     try:
         with connection.cursor() as cursor:
@@ -27,6 +28,14 @@ def ready(request):
         checks["database"] = "ok"
     except Exception as exc:  # pragma: no cover - exercised only on real outages
         checks["database"] = f"error: {exc}"
+
+    # A round trip, not just a ping: the throttle needs writes to work too.
+    try:
+        cache.set("health:ready-probe", "ok", timeout=10)
+        read_back = cache.get("health:ready-probe")
+        checks["cache"] = "ok" if read_back == "ok" else "error: read back failed"
+    except Exception as exc:  # pragma: no cover - exercised only on real outages
+        checks["cache"] = f"error: {exc}"
 
     healthy = all(value == "ok" for value in checks.values())
     return Response(

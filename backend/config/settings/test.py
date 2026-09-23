@@ -14,6 +14,9 @@ DATABASES = {
     }
 }
 
+# In-memory and per-process: tests must not share state through disk or Redis.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # Copied rather than mutated — see development.py. Throttling is effectively

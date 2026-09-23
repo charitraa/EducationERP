@@ -19,6 +19,24 @@ DATABASES = {
     }
 }
 
+# Redis, because every gunicorn worker (and every replica) must share one
+# cache. The login throttle counts attempts in it: with the per-process
+# default each worker kept its own count, which multiplied the real limit by
+# the worker count. Short socket timeouts make a Redis outage fail fast
+# instead of hanging each request that touches the cache.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": config("REDIS_URL"),
+        "KEY_PREFIX": "erp",
+        "TIMEOUT": 300,
+        "OPTIONS": {
+            "socket_connect_timeout": 2,
+            "socket_timeout": 2,
+        },
+    }
+}
+
 # Hashed filenames so assets can be cached forever, pre-compressed so
 # WhiteNoise serves .br/.gz without doing it per request. Requires
 # collectstatic to have run — the entrypoint does it on boot.
@@ -54,7 +72,9 @@ EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
 # discarded on redeploy. Errors also go to a rotating file whose path is
 # stable and mountable on a volume.
 # --------------------------------------------------------------------------
-LOG_DIR = Path(config("LOG_DIR", default=str(BASE_DIR / "logs")))
+# `or` rather than default=: a blank LOG_DIR= in .env is "" (the working
+# directory), not missing, so decouple would never fall back to the default.
+LOG_DIR = Path(config("LOG_DIR", default="") or BASE_DIR / "logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Deep-copied because `from .base import *` shares the nested dicts; editing

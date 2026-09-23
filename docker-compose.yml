@@ -1,4 +1,4 @@
-# Production-shaped stack: Postgres + gunicorn running config.settings.production.
+# Production-shaped stack: Postgres + Redis + gunicorn running config.settings.production.
 #
 #   docker compose up -d --build
 #
@@ -29,6 +29,30 @@ services:
     # ports:
     #   - "5432:5432"
 
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # A pure cache: nothing in it is the only copy of anything, so persistence
+    # is off and the oldest keys are evicted once the memory cap is reached.
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Not published, and so not password-protected: only the backend on this
+    # network can reach it. Add requirepass (and a password in REDIS_URL)
+    # before exposing it anywhere.
+
   backend:
     build:
       context: ./backend
@@ -36,6 +60,8 @@ services:
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     env_file:
       - ./backend/.env
@@ -46,6 +72,7 @@ services:
       # Overrides .env: inside the network the database is the service name.
       DB_HOST: db
       DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
       # The container healthcheck calls /health/ over plain http on loopback.
       # Both of these keep that from being rejected or redirected; terminate
       # TLS and enforce https at the proxy in front of this service.
