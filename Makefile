@@ -8,7 +8,7 @@
 COMPOSE := docker compose --env-file ./backend/.env
 DEV     := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 
-.PHONY: build up dev down logs errors shell bash migrate superuser test ps clean
+.PHONY: build up dev down logs errors shell bash migrate superuser seed test ps clean
 
 build:           ## Build the backend image
 	$(COMPOSE) build
@@ -36,6 +36,11 @@ bash:            ## A shell in the running container
 
 migrate:         ## Apply migrations
 	$(COMPOSE) exec backend python manage.py migrate
+
+# Dev stack only: seed_demo refuses to run with DEBUG off, which is what the
+# production-shaped stack runs with.
+seed:            ## Load demo organizations, campuses and users
+	$(COMPOSE) exec backend python manage.py seed_demo
 
 superuser:       ## Create an admin user
 	$(COMPOSE) exec backend python manage.py createsuperuser

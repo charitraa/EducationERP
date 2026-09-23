@@ -60,6 +60,11 @@ elif DEV_DATABASE in ("mysql", "postgres"):
             # silently truncating them, which is what Postgres does too.
             "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
         }
+        # The five W036 warnings are the known limitation described at the
+        # top of this block and in the README. Silenced so they don't bury
+        # real warnings on every command; only for MySQL, so Postgres and
+        # SQLite would still report a new occurrence.
+        SILENCED_SYSTEM_CHECKS = ["models.W036"]
 else:
     raise ImproperlyConfigured(
         f"DEV_DATABASE must be mysql, postgres or sqlite, not {DEV_DATABASE!r}."

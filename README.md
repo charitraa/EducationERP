@@ -28,18 +28,29 @@ several branches.
 | 9 | Authentication | `core/authentication/` (JWT, access + refresh) |
 | 10 | Audit log | `core/audit/` |
 | 11 | API versioning | `/api/v1/` via `config/api_v1.py` |
-| 12 | Testing setup | `tests/`, 143 tests |
+| 12 | Testing setup | `tests/`, 150 tests |
 | 13 | API documentation | OpenAPI 3 at `/api/docs/` |
 
 ---
 
 ## Quick start
 
+Development uses **MySQL** (or MariaDB) by default. Create an empty database
+and a user for it once:
+
+```sql
+-- mysql -u root -p   (MariaDB: sudo mariadb)
+CREATE DATABASE education_erp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'education_erp'@'localhost' IDENTIFIED BY 'choose-a-password';
+GRANT ALL PRIVILEGES ON education_erp.* TO 'education_erp'@'localhost';
+```
+
 ```bash
 cd backend
-source ../.venv/bin/activate          # or: python3 -m venv .venv && pip install -r requirements.txt
+source ../.venv/bin/activate          # or: python3 -m venv .venv
+pip install -r requirements-dev.txt   # includes the MySQL driver (needs the MySQL/MariaDB client library)
 
-cp .env.example .env                  # then set SECRET_KEY
+cp .env.example .env                  # then set SECRET_KEY and DB_PASSWORD
 python manage.py migrate
 python manage.py sync_permissions     # load the permission catalogue + system roles
 
@@ -51,6 +62,29 @@ python manage.py runserver
 ```
 
 Then open <http://127.0.0.1:8000/api/docs/>.
+
+To use a different database in development, set `DEV_DATABASE` in `.env`:
+
+| `DEV_DATABASE` | Database | Notes |
+|---|---|---|
+| `mysql` | MySQL 8.4+ / MariaDB 10.6+ | The default in `.env.example` |
+| `postgres` | PostgreSQL | Same as production |
+| `sqlite` | file `backend/db.sqlite3` | No server needed; used when `DEV_DATABASE` is missing |
+
+**MySQL limitation.** MySQL can't enforce unique rules that have a condition,
+so these rules are missing from the database. (Django's `models.W036` warning
+about this is silenced in `development.py` when `DEV_DATABASE=mysql`.)
+
+- a campus code must be unique within its organization
+- a role code must be unique within its organization, and among system roles
+- a user can't be given the same role twice, for the whole organization or for a campus
+
+The code checks all three before saving (the campus and role serializers, and
+the `assign_role` service), so normal use through the API is protected. Rows
+written directly, for example `Campus.objects.create(...)` in the shell, are
+not checked. Production (PostgreSQL)
+enforces all of them. Tests always use in-memory SQLite, which enforces them
+too.
 
 ```bash
 # Log in
@@ -69,7 +103,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 143 tests, in-memory SQLite
+python manage.py test          # 150 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -106,7 +140,7 @@ docker compose --env-file ./backend/.env exec backend \
 
 | Command | What it does |
 |---|---|
-| `make dev` | Dev stack in the foreground (`DEV_USE_POSTGRES=True`, `DEBUG=True`) |
+| `make dev` | Dev stack in the foreground (Postgres, `DEBUG=True`) |
 | `make up` / `make down` | Start detached / stop, keeping data |
 | `make logs` / `make errors` | Tail app logs / the 500 traceback log |
 | `make shell` / `make bash` | Django shell / `sh` inside the container |

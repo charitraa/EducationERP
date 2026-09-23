@@ -7,8 +7,9 @@ services:
   backend:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.development
-      # development.py is SQLite-first; this opts it into the db service.
-      DEV_USE_POSTGRES: "True"
+      # The container talks to the stack's Postgres service, whatever
+      # DEV_DATABASE your .env picks for running outside Docker.
+      DEV_DATABASE: postgres
       DEBUG: "True"
       # runserver serves static itself, so skip the collectstatic pass and
       # keep restarts fast.
