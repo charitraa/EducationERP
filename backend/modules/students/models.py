@@ -82,6 +82,19 @@ class Student(OrganizationOwnedModel):
         return self.status in (self.Status.ACTIVE, self.Status.SUSPENDED)
 
 
+class EnrollmentQuerySet(models.QuerySet):
+    def on(self, day=None):
+        """Enrollments in effect on ``day`` (default today).
+
+        An enrollment covers ``started_on`` up to, not including,
+        ``ended_on``. Dates decide, not status: a move recorded today for next
+        term leaves the student in their class until then, and a student
+        placed ahead into next year's class isn't in it yet.
+        """
+        day = day or timezone.localdate()
+        return self.filter(started_on__lte=day).filter(Q(ended_on__isnull=True) | Q(ended_on__gt=day))
+
+
 class Enrollment(TimeStampedModel):
     """One continuous period of a student's study at a campus.
 
@@ -123,6 +136,8 @@ class Enrollment(TimeStampedModel):
     started_on = models.DateField()
     ended_on = models.DateField(null=True, blank=True)
     end_reason = models.CharField(max_length=255, blank=True)
+
+    objects = EnrollmentQuerySet.as_manager()
 
     class Meta:
         db_table = "students_enrollment"

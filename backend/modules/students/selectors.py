@@ -10,12 +10,13 @@ from core.permissions.selectors import campus_ids_with_permission
 from .models import Enrollment, Student
 
 
-def with_current_enrollment(queryset):
-    """Attach the open enrollment as ``current_enrollments`` (0 or 1 items)."""
+def with_current_enrollment(queryset, on=None):
+    """Attach the enrollment in effect today (or ``on``) as
+    ``current_enrollments`` (0 or 1 items)."""
     return queryset.prefetch_related(
         Prefetch(
             "enrollments",
-            queryset=Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).select_related(
+            queryset=Enrollment.objects.on(on).select_related(
                 "campus", "section__program", "section__academic_year"
             ),
             to_attr="current_enrollments",
@@ -23,12 +24,14 @@ def with_current_enrollment(queryset):
     )
 
 
-def get_current_enrollment(student: Student) -> Enrollment | None:
+def get_current_enrollment(student: Student, on=None) -> Enrollment | None:
+    """The enrollment in effect today (or ``on``): the class the student is
+    actually in, not one they're scheduled to move to."""
     prefetched = getattr(student, "current_enrollments", None)
-    if prefetched is not None:
+    if prefetched is not None and on is None:
         return prefetched[0] if prefetched else None
     return (
-        student.enrollments.filter(status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.on(on).filter(student=student)
         .select_related("campus", "section__program", "section__academic_year")
         .first()
     )
@@ -68,8 +71,8 @@ def students_by_ids(ids):
     return Student.objects.select_related("campus").filter(pk__in=ids)
 
 
-def students_in_section(section):
-    """Students currently placed in ``section`` (open enrollments only)."""
+def students_in_section(section, on=None):
+    """Students in ``section`` today (or ``on``), by enrollment dates."""
     return Student.objects.select_related("campus").filter(
-        enrollments__section=section, enrollments__status=Enrollment.Status.ACTIVE
+        pk__in=Enrollment.objects.on(on).filter(section=section).values("student_id")
     )

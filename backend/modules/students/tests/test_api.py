@@ -183,13 +183,19 @@ class TransferAndStatusTests(APITestCaseBase):
         self.assertEqual(self.student.enrollments.count(), 1)
 
     def test_graduate(self):
-        response = self.client.post(
-            f"{URL}{self.student.pk}/change-status/", {"status": "graduated", "on_date": "2027-03-31"}
-        )
+        response = self.client.post(f"{URL}{self.student.pk}/change-status/", {"status": "graduated"})
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["status"], "graduated")
         self.assertIsNone(response.data["current_enrollment"])
+
+    def test_graduation_recorded_ahead_keeps_the_student_in_class_until_then(self):
+        response = self.client.post(
+            f"{URL}{self.student.pk}/change-status/", {"status": "graduated", "on_date": "2099-03-31"}
+        )
+
+        self.assertEqual(response.data["status"], "graduated")
+        self.assertEqual(response.data["current_enrollment"]["ended_on"], "2099-03-31")
 
     def test_graduated_is_final(self):
         self.client.post(f"{URL}{self.student.pk}/change-status/", {"status": "graduated"})

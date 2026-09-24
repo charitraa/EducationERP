@@ -291,7 +291,17 @@ class Section(OrganizationOwnedModel):
 
 class TeachingAssignment(TimeStampedModel):
     """Who teaches which subject to which section. The timetable (Phase 3b)
-    schedules these; attendance and marks hang off them later."""
+    schedules these; attendance and marks hang off them later.
+
+    One subject may have several teachers: theory by one, practicals by
+    another, or two teaching together. ``role`` tells them apart.
+    """
+
+    class Role(models.TextChoices):
+        LECTURE = "lecture", "Lecture / theory"
+        PRACTICAL = "practical", "Practical / lab"
+        TUTORIAL = "tutorial", "Tutorial"
+        CO_TEACHING = "co_teaching", "Co-teaching"
 
     organization = models.ForeignKey(
         "organizations.Organization", on_delete=models.CASCADE, related_name="teaching_assignments"
@@ -301,9 +311,15 @@ class TeachingAssignment(TimeStampedModel):
     teacher = models.ForeignKey(
         "staff.StaffMember", on_delete=models.PROTECT, related_name="teaching_assignments"
     )
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.LECTURE)
     periods_per_week = models.PositiveSmallIntegerField(
         null=True, blank=True,
         help_text="How many lessons a week. The timetable generator fills up to this.",
+    )
+    is_active = models.BooleanField(
+        default=True, db_index=True,
+        help_text="False once the teacher no longer teaches it (e.g. after a hand-over). "
+                  "Kept as a record; can't get new lessons.",
     )
 
     class Meta:
@@ -311,7 +327,7 @@ class TeachingAssignment(TimeStampedModel):
         ordering = ["section", "subject__name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["section", "subject", "teacher"], name="uniq_teaching_assignment"
+                fields=["section", "subject", "teacher", "role"], name="uniq_teaching_assignment_role"
             ),
         ]
 
@@ -319,12 +335,28 @@ class TeachingAssignment(TimeStampedModel):
         return f"{self.teacher} → {self.subject.name}, {self.section.display_name}"
 
 
+class StudentElectiveQuerySet(models.QuerySet):
+    def on(self, day=None):
+        """Choices in effect on ``day`` (default today): taken from
+        ``started_on`` up to, not including, ``ended_on``."""
+        from django.utils import timezone
+
+        day = day or timezone.localdate()
+        return self.filter(started_on__lte=day).filter(
+            Q(ended_on__isnull=True) | Q(ended_on__gt=day),
+            # ...and only while the student is in that class.
+            Q(enrollment__ended_on__isnull=True) | Q(enrollment__ended_on__gt=day),
+        )
+
+
 class StudentElective(TimeStampedModel):
-    """An elective subject a student takes in their current class.
+    """An elective subject a student takes in one class.
 
     Belongs to one enrollment (one stay in one section), so a student's
-    choices in earlier classes stay in their history. Compulsory subjects
-    aren't recorded: every student of the section takes them.
+    choices in earlier classes stay in their history. Dropping a subject ends
+    the choice rather than deleting it, so what they took, and when, stays
+    true. Compulsory subjects aren't recorded: every student of the section
+    takes them.
     """
 
     organization = models.ForeignKey(
@@ -334,13 +366,99 @@ class StudentElective(TimeStampedModel):
         "students.Enrollment", on_delete=models.CASCADE, related_name="electives"
     )
     subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="student_choices")
+    started_on = models.DateField()
+    ended_on = models.DateField(null=True, blank=True, help_text="Set when the subject is dropped.")
+
+    objects = StudentElectiveQuerySet.as_manager()
 
     class Meta:
         db_table = "academics_student_elective"
-        ordering = ["enrollment", "subject__name"]
+        ordering = ["enrollment", "subject__name", "started_on"]
         constraints = [
-            models.UniqueConstraint(fields=["enrollment", "subject"], name="uniq_student_elective"),
+            models.UniqueConstraint(
+                fields=["enrollment", "subject"], condition=Q(ended_on__isnull=True),
+                name="uniq_open_student_elective",
+            ),
+            models.CheckConstraint(
+                condition=Q(ended_on__isnull=True) | Q(ended_on__gt=F("started_on")),
+                name="student_elective_dates_ordered",
+            ),
         ]
 
     def __str__(self):
         return f"{self.enrollment.student} takes {self.subject.name}"
+
+
+class CalendarEvent(OrganizationOwnedModel):
+    """A day or span on the academic calendar: holidays (Dashain, Tihar),
+    closures (strikes, snow days), exam days, events, and make-up days that
+    run another weekday's timetable.
+
+    Narrowed by ``campus`` (empty: every campus), ``program`` and ``level``
+    (empty: all), so "Grade 10 SEE preparation exams at Lalitpur" is one
+    event. The timetable reads it: suspended days show their lessons as
+    cancelled, and attendance won't expect them.
+    """
+
+    class Kind(models.TextChoices):
+        HOLIDAY = "holiday", "Holiday"
+        CLOSURE = "closure", "Closure"
+        EXAM = "exam", "Exam"
+        EVENT = "event", "Event"
+        MAKEUP_DAY = "makeup_day", "Make-up day"
+
+    # Whether classes stop, unless said otherwise.
+    SUSPENDS_BY_DEFAULT = {Kind.HOLIDAY: True, Kind.CLOSURE: True, Kind.EXAM: True,
+                           Kind.EVENT: False, Kind.MAKEUP_DAY: False}
+
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    start_date = models.DateField()
+    end_date = models.DateField(help_text="Inclusive. The same as start_date for one day.")
+    campus = models.ForeignKey(
+        "organizations.Campus", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="calendar_events", help_text="Empty: every campus.",
+    )
+    program = models.ForeignKey(
+        Program, null=True, blank=True, on_delete=models.PROTECT, related_name="calendar_events",
+        help_text="Empty: every program.",
+    )
+    level = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="With a program: only this grade or semester."
+    )
+    suspends_classes = models.BooleanField(help_text="Regular lessons don't take place.")
+    runs_timetable_of = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Make-up day: run this weekday's timetable (1 = Monday … 7 = Sunday).",
+    )
+
+    class Meta:
+        db_table = "academics_calendar_event"
+        ordering = ["start_date", "pk"]
+        indexes = [models.Index(fields=["organization", "start_date", "end_date"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(end_date__gte=F("start_date")), name="calendar_event_dates_ordered"
+            ),
+            models.CheckConstraint(
+                condition=(Q(kind="makeup_day", runs_timetable_of__gte=1, runs_timetable_of__lte=7,
+                             suspends_classes=False)
+                           | (~Q(kind="makeup_day") & Q(runs_timetable_of__isnull=True))),
+                name="calendar_makeup_day_names_a_weekday",
+            ),
+            models.CheckConstraint(
+                condition=Q(level__isnull=True) | Q(program__isnull=False),
+                name="calendar_level_needs_program",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.start_date}–{self.end_date})"
+
+    def applies_to(self, section) -> bool:
+        return (
+            self.campus_id in (None, section.campus_id)
+            and self.program_id in (None, section.program_id)
+            and self.level in (None, section.level)
+        )

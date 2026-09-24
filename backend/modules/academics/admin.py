@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     AcademicYear,
     Batch,
+    CalendarEvent,
     CurriculumSubject,
     Department,
     Program,
@@ -83,3 +84,11 @@ class SectionAdmin(admin.ModelAdmin):
     list_filter = ["organization", "academic_year", "campus", "program"]
     raw_id_fields = ["class_teacher", "home_room", "batch"]
     inlines = [TeachingAssignmentInline]
+
+
+@admin.register(CalendarEvent)
+class CalendarEventAdmin(admin.ModelAdmin):
+    list_display = ["title", "kind", "start_date", "end_date", "campus", "program", "level", "suspends_classes"]
+    list_filter = ["organization", "kind", "campus", "suspends_classes"]
+    date_hierarchy = "start_date"
+    search_fields = ["title"]

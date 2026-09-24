@@ -25,6 +25,8 @@ TimetableEntry
   room?                defaults to the section's home room; same campus
   term?                empty = the whole academic year; else that term only
   combined_group?      entries sharing it are one combined class
+  valid_from?          first day it runs (a lesson added mid-year: today)
+  valid_until?         last day it runs (set when it's changed or removed)
 
 LessonChange          one lesson on one date
   entry, date          the date must be one the lesson takes place on
@@ -157,7 +159,10 @@ campus is always a 403, never a 409 that reveals that campus's timetable.
     ?date=YYYY-MM-DD  the lessons of one day: its weekday, inside the section's
                       academic year and, for term lessons, inside the term
     also: ?subject= ?campus= ?academic_year= ?term= ?period= ?day_of_week= ?combined_group=
-/api/v1/timetable/day/?date=      one day with its changes applied (section / teacher / room)
+    The list shows the timetable from today on; ?include_ended=true adds history.
+    PATCH takes effective_from; DELETE takes ?effective_from= (see "History").
+/api/v1/timetable/day/?date=      one day with its changes and the calendar applied
+/api/v1/bell-schedules/{id}/retime/  POST  new bell times from a date (winter timings)
 /api/v1/timetable/me/             the caller's own timetable: teacher, student or parent
 /api/v1/timetable/hand-over/      POST  move assignments' lessons to another teacher
 /api/v1/timetable/generate/       POST  fill the week from periods_per_week (dry run by default)
@@ -305,22 +310,78 @@ their academic year. Needs `timetable.manage` at that campus.
 
 ---
 
+## History: the past stays true
+
+Lessons and bell times carry `valid_from` and `valid_until`. A change to a
+lesson that has already run is never an edit in place:
+
+- **PATCH** a lesson's teacher (same section), day, period, room or term,
+  with `effective_from` (default today). If the lesson ran before that date,
+  it ends the day before and a new version carries on (the response has the
+  new id). If it hasn't started, it's edited in place.
+- **DELETE** a lesson that ran ends it the day before `?effective_from=`
+  (default today). Its future lesson changes are removed. A lesson that
+  never ran is simply removed.
+- **Hand-over** takes `on` (default today). Past lessons keep the teacher
+  who taught them. The old assignment is marked inactive and gets no new
+  lessons.
+- **Retime** (`POST /bell-schedules/{id}/retime/ {"effective_from", "periods":
+  [{"period", "start_time", "end_time"}]}`) moves periods and their lessons
+  to new clock times from a date. The new times must not overlap the rest
+  of the day, and moved lessons are checked against those that aren't
+  moving (another shift, a shared teacher). All or nothing.
+- **Planned substitutes** follow a new version when it still meets that
+  day. Moving a lesson to another weekday with planned changes is refused
+  (409 `planned_changes`).
+- A lesson **added mid-year** runs from today, not retroactively.
+- Clashes are checked over the dates both lessons actually run. A slot
+  freed from next Monday is free from then, not before.
+
+The list shows the timetable from today on; `?include_ended=true` shows the
+history, and `?date=` any day.
+
+## The academic calendar
+
+`/api/v1/calendar/` (in academics) holds holidays, closures, exam days,
+events and make-up days, optionally for one campus, one program or one
+grade. The day view, `/me/` and lesson changes read it:
+
+- On a **holiday, closure or exam day**, the lessons it covers show
+  `is_cancelled: true` and `closed_by: "Dashain"`. A lesson change on such
+  a day is refused.
+- An **event** doesn't stop classes, unless `suspends_classes` is set.
+- A **make-up day** (`runs_timetable_of`, 1–7) runs another weekday's
+  timetable for the sections it covers.
+- A campus admin manages their campus's events and sees events for every
+  campus. Events for every campus need an organization-wide role
+  (`academics.manage_calendar`).
+
+## Teachers per subject, and room size
+
+- A teaching assignment has a `role`: `lecture`, `practical`, `tutorial` or
+  `co_teaching`. One subject can have theory with one teacher and a lab with
+  another.
+- **Practical groups** of one subject may meet at the same time in
+  different rooms. A **co-teacher** may share the time and room. Anything
+  else in the same section at that time is a clash.
+- **Room size.** Booking a room with fewer seats than the class is refused
+  (409 `room_too_small`) unless `allow_over_capacity` is sent. A combined
+  class counts every section. An elective counts only the students who
+  take it.
+
+## Combined classes and lesson changes
+
+A substitute, room change or cancellation on one section of a combined
+class applies to every section. Editing or removing it follows too, so one
+hall never has two teachers.
+
+---
+
 ## Tests
 
-83 tests for the timetable, 16 for electives and promotion (453 in the
-suite). They cover:
-
-- every rule above, and each kind of clash;
-- parallel electives, including a student taking both;
-- combined classes: joining, moving together, leaving, clashes;
-- handover: all or nothing, pairwise clashes, combined classes;
-- lesson changes: a substitute freed by a cancellation or by cover, room
-  clashes, weekly lessons blocked by upcoming cover;
-- the day view, and `/me/` for teachers, students and parents;
-- the generator: no clashes, spreading, filling gaps, parallel electives,
-  cross-campus teachers, what doesn't fit;
-- redaction of out-of-scope clashes, campus scoping, tenant isolation,
-  permissions and constant query counts.
+130 tests for the timetable (513 in the suite). They cover every rule
+above, each kind of clash, and the real-life situations listed in
+[`phase-3-real-life.md`](phase-3-real-life.md).
 
 ---
 
@@ -330,8 +391,7 @@ suite). They cover:
   a very tight week (every teacher nearly full) can leave lessons unplaced
   that a backtracking solver might fit. Place those by hand, or free a
   slot and generate again.
-- **Hand-over rewrites the weekly entries.** Attendance taken before the
-  handover still points at the same entries. Phase 4 should record the
-  teacher on each attendance session, rather than read it from the entry.
 - **Electives carried over on a same-level move aren't re-checked** against
   the new section's timetable.
+- **The generator** doesn't know teacher availability, labs or double
+  periods. See [`phase-3-real-life.md`](phase-3-real-life.md).

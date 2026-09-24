@@ -132,7 +132,8 @@ by `section.campus`.
 /api/v1/teaching-assignments/   CRUD   campus-scoped; ?section= ?teacher= ?subject=
 /api/v1/students/{id}/place/    POST
 /api/v1/sections/{id}/promote/  POST   whole class
-/api/v1/student-electives/      GET POST DELETE
+/api/v1/student-electives/      GET POST DELETE (drop = end from today)
+/api/v1/calendar/               CRUD   ?from=&to= ?kind= ?campus= ?program= ?level=
 ```
 
 ---
@@ -146,6 +147,20 @@ isolation and permissions. List endpoints run a constant number of queries
 regardless of row count.
 
 ---
+
+## Placement over time
+
+Enrollments cover `started_on` up to, but not including, `ended_on`, and
+**dates decide who is in a class**, not status (`Enrollment.objects.on(date)`,
+`students_in_section(section, on=date)`):
+
+- A move with a future `on_date` is **scheduled**. The student stays in
+  their class until then, and a whole class can be promoted ahead. Placing
+  again revises the scheduled move, and placing back cancels it. Transfer
+  and withdrawal are refused (409 `scheduled_move`) until it's cancelled.
+- A graduation recorded ahead keeps the student in class until its date.
+- **Capacity.** Placing or promoting into a full section is refused (409
+  `over_capacity`) unless `allow_over_capacity` is sent.
 
 ## Electives per student
 
@@ -170,6 +185,11 @@ Rules:
 - A move within the same level (11 A → 11 B) keeps the choices. A
   promotion (Grade 11 → 12) starts afresh, because the next level has its
   own curriculum.
+- Choices are **dated** (`started_on`, `ended_on`). Dropping a subject ends
+  the choice, so past dates still show it. A choice made today is simply
+  removed. `in_section` picks next year's class for choosing ahead.
+- The curriculum refuses to remove an elective students take, or to make it
+  compulsory while it runs in parallel or has current choices.
 - Writes need `students.place`. Reads need `academics.view` and
   `students.view`. Campus-scoped by the enrollment's campus.
 
@@ -185,8 +205,27 @@ or nothing: if any student can't be moved, nobody is. The response is
 409 `promotion_failed`, with `details.students` listing each student who
 failed and why. Needs `students.place`.
 
-## Weekly lessons per assignment
+## Teaching assignments
 
-`TeachingAssignment.periods_per_week` (optional, 1–60) says how many lessons
-a week an assignment needs. The timetable generator fills up to this number
-([`phase-3b.md`](phase-3b.md)).
+- `role`: `lecture` (default), `practical`, `tutorial` or `co_teaching`. One
+  subject can have several teachers; a teacher can hold several roles.
+- `periods_per_week` (optional, 1–60): how many lessons a week. The timetable
+  generator fills up to this number ([`phase-3b.md`](phase-3b.md)).
+- `is_active`: false once handed over. Kept as a record, with no new
+  lessons. An assignment whose lessons have run can't be deleted, only
+  retired.
+
+## Academic calendar
+
+`/api/v1/calendar/`: holidays, closures, exams, events and make-up days, for
+every campus or one, optionally one program and grade. See
+[`phase-3b.md`](phase-3b.md#the-academic-calendar) for how the timetable
+uses it.
+
+## Staff leaving
+
+Marking a staff member `left` is refused while they have lessons, planned
+cover, or a class-teacher role from the leaving date on. Hand the work over
+first.
+
+All real-life situations and their tests: [`phase-3-real-life.md`](phase-3-real-life.md).

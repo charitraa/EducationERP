@@ -1,5 +1,9 @@
 """Read-side queries for academics that other modules use (timetable, and
-later attendance and exams)."""
+later attendance and exams). Everything answers "on a date" (default
+today), so history stays true after students move or drop subjects."""
+from django.db.models import Q
+from django.utils import timezone
+
 from modules.students.models import Enrollment, Student
 
 from .models import CurriculumSubject, StudentElective
@@ -11,26 +15,29 @@ def is_elective(section, subject_id) -> bool:
     ).exists()
 
 
-def students_taking(section, subject_id):
-    """Students currently in ``section`` who take the subject: everyone for a
+def students_taking(section, subject_id, on=None):
+    """Students in ``section`` on ``on`` who take the subject: everyone for a
     compulsory subject, only those who chose it for an elective."""
-    # One filter() call, so the elective is matched on the same (current)
-    # enrollment, not on one from an earlier class.
-    lookup = {"enrollments__section": section, "enrollments__status": Enrollment.Status.ACTIVE}
+    enrollments = Enrollment.objects.on(on).filter(section=section)
     if is_elective(section, subject_id):
-        lookup["enrollments__electives__subject_id"] = subject_id
-    return Student.objects.select_related("campus").filter(**lookup).distinct()
+        enrollments = enrollments.filter(
+            pk__in=StudentElective.objects.on(on).filter(subject_id=subject_id).values("enrollment_id")
+        )
+    return Student.objects.select_related("campus").filter(pk__in=enrollments.values("student_id"))
 
 
-def electives_share_students(section, subject_a, subject_b) -> bool:
-    """Does any student currently in ``section`` take both electives?"""
+def electives_share_students(section, subject_a, subject_b, on=None) -> bool:
+    """Does any student in ``section`` take both electives? Counts choices in
+    effect on ``on`` or later, since a timetable is for the weeks ahead."""
     if subject_a == subject_b:
         return True
-    enrollments_a = StudentElective.objects.filter(
-        enrollment__section=section, enrollment__status=Enrollment.Status.ACTIVE, subject_id=subject_a
-    ).values("enrollment_id")
-    return StudentElective.objects.filter(enrollment_id__in=enrollments_a, subject_id=subject_b).exists()
+    day = on or timezone.localdate()
+    live = StudentElective.objects.filter(enrollment__section=section).filter(
+        Q(ended_on__isnull=True) | Q(ended_on__gt=day),
+    ).filter(Q(enrollment__ended_on__isnull=True) | Q(enrollment__ended_on__gt=day))
+    enrollments_a = live.filter(subject_id=subject_a).values("enrollment_id")
+    return live.filter(enrollment_id__in=enrollments_a, subject_id=subject_b).exists()
 
 
-def chosen_elective_ids(enrollment) -> set[int]:
-    return set(enrollment.electives.values_list("subject_id", flat=True))
+def chosen_elective_ids(enrollment, on=None) -> set[int]:
+    return set(StudentElective.objects.on(on).filter(enrollment=enrollment).values_list("subject_id", flat=True))

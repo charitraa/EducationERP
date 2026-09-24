@@ -31,6 +31,7 @@ from modules.academics.models import CurriculumSubject, Room, TeachingAssignment
 from modules.academics.selectors import electives_share_students
 
 from .models import TimetableEntry
+from .services import running_between, span
 
 
 @dataclass
@@ -57,15 +58,29 @@ class Proposal:
 class Plan:
     proposals: list[Proposal] = field(default_factory=list)
     unplaced: list[dict] = field(default_factory=list)
+    start: object = None
 
 
-def plan_timetable(*, sections, schedule, days, term=None) -> Plan:
-    periods = list(schedule.periods.filter(is_break=False).order_by("start_time"))
+def plan_timetable(*, sections, schedule, days, term=None, start=None) -> Plan:
+    """``start`` (default today, or the year/term start if later) is when the
+    new lessons begin; only lessons running from then on are in the way."""
+    from django.utils import timezone
+
+    today = timezone.localdate()
     section_ids = [s.pk for s in sections]
     year_ids = {s.academic_year_id for s in sections}
+    first, last = span(academic_year=sections[0].academic_year, term=term)
+    start = max(start or today, first)
+    periods = list(
+        schedule.periods.filter(is_break=False)
+        .filter(Q(valid_from__isnull=True) | Q(valid_from__lte=start))
+        .filter(Q(valid_until__isnull=True) | Q(valid_until__gte=start))
+        .order_by("start_time")
+    )
 
     assignments = list(
-        TeachingAssignment.objects.filter(section_id__in=section_ids, periods_per_week__isnull=False)
+        TeachingAssignment.objects.filter(section_id__in=section_ids, periods_per_week__isnull=False,
+                                          is_active=True)
         .select_related("section__program", "section__home_room", "subject", "teacher")
         .order_by("section_id", "subject__name", "pk")
     )
@@ -82,14 +97,13 @@ def plan_timetable(*, sections, schedule, days, term=None) -> Plan:
 
     # What already happens in the week, from every campus for teachers.
     existing = TimetableEntry.objects.filter(
-        teaching_assignment__section__academic_year_id__in=year_ids
+        running_between(start, last),
+        teaching_assignment__section__academic_year_id__in=year_ids,
     ).filter(
         Q(teaching_assignment__teacher_id__in={a.teacher_id for a in assignments})
         | Q(teaching_assignment__section_id__in=section_ids)
         | Q(room__campus_id=schedule.campus_id)
     ).select_related("period", "teaching_assignment__section")
-    if term is not None:
-        existing = existing.filter(Q(term__isnull=True) | Q(term=term))
 
     teacher_busy, room_busy, section_busy = defaultdict(list), defaultdict(list), defaultdict(list)
     have = defaultdict(int)
@@ -145,7 +159,7 @@ def plan_timetable(*, sections, schedule, days, term=None) -> Plan:
 
     needed = {a.pk: max(0, a.periods_per_week - have[a.pk]) for a in assignments}
     order = sorted(assignments, key=lambda a: (-needed[a.pk], a.section_id, a.subject.name, a.pk))
-    plan = Plan()
+    plan = Plan(start=start)
     stuck = set()
 
     while any(needed[a.pk] and a.pk not in stuck for a in order):

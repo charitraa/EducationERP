@@ -51,6 +51,12 @@ def _open_enrollment(student: Student) -> Enrollment:
 
 
 def _close(enrollment: Enrollment, status: str, on_date, reason: str) -> None:
+    if enrollment.started_on > timezone.localdate() and enrollment.section_id is not None:
+        raise ConflictError(
+            f"A move to {enrollment.section.display_name} on {enrollment.started_on} is scheduled. "
+            "Cancel it first by placing the student back in their current class.",
+            code="scheduled_move",
+        )
     if on_date < enrollment.started_on:
         raise ServiceError(
             f"The date cannot be before the enrollment started ({enrollment.started_on}).",
@@ -179,19 +185,51 @@ def _carry_electives(old: Enrollment, new: Enrollment) -> None:
     if (old_section.program_id, old_section.level) != (new_section.program_id, new_section.level):
         return
     StudentElective.objects.bulk_create(
-        StudentElective(organization_id=new.organization_id, enrollment=new, subject_id=subject_id)
-        for subject_id in old.electives.values_list("subject_id", flat=True)
+        StudentElective(organization_id=new.organization_id, enrollment=new, subject_id=subject_id,
+                        started_on=new.started_on)
+        for subject_id in old.electives.filter(ended_on__isnull=True).values_list("subject_id", flat=True)
+    )
+
+
+def _check_capacity(section, day, allow_over_capacity, exclude_student=None) -> None:
+    """A full class refuses more students unless the caller says it's on
+    purpose: schools do go over capacity, but never by accident."""
+    if section.capacity is None or allow_over_capacity:
+        return
+    placed = Enrollment.objects.on(day).filter(section=section).exclude(student_id=exclude_student).count()
+    if placed >= section.capacity:
+        raise ConflictError(
+            f"{section.display_name} is full ({placed} of {section.capacity}) on {day}. "
+            "Send allow_over_capacity to place the student anyway.",
+            code="over_capacity",
+        )
+
+
+def _previous_enrollment(enrollment: Enrollment) -> Enrollment | None:
+    """The class a scheduled move leaves: closed as moved on the day the
+    move starts."""
+    return (
+        Enrollment.objects.select_for_update()
+        .filter(student_id=enrollment.student_id, status=Enrollment.Status.MOVED,
+                ended_on=enrollment.started_on, campus_id=enrollment.campus_id)
+        .exclude(pk=enrollment.pk).order_by("-started_on", "-pk").first()
     )
 
 
 @transaction.atomic
-def place_student(*, student: Student, section, on_date=None, reason="", by=None) -> Student:
+def place_student(*, student: Student, section, on_date=None, reason="", by=None,
+                  allow_over_capacity=False) -> Student:
     """Put a student in a section (class group), or move them to another.
 
     The first placement of an enrollment fills in its section. Any later move —
     promotion to the next grade, a new academic year, a section change —
     closes the current enrollment as ``moved`` and opens a new one, so the
     history shows every class the student has been in.
+
+    ``on_date`` may be in the future: a promotion recorded in Chaitra for
+    Baisakh leaves the student in their class until then (see
+    ``Enrollment.objects.on``). Placing again while such a move is pending
+    revises it; placing back into the class they're leaving cancels it.
     """
     student = Student.objects.select_for_update().get(pk=student.pk)
     if section.organization_id != student.organization_id:
@@ -207,35 +245,66 @@ def place_student(*, student: Student, section, on_date=None, reason="", by=None
             code="different_campus",
         )
 
+    today = timezone.localdate()
+    current = _open_enrollment(student)
+    # A first placement fills in the open enrollment from its own start.
+    effective = current.started_on if current.section_id is None else (on_date or today)
+
     # Placing ahead into next year's sections is normal (promotions are set
     # up before the year starts); placing into a year that is already over
     # is always a mistake.
-    effective = on_date or timezone.localdate()
     year = section.academic_year
-    if year.end_date < effective:
+    if year.end_date < (on_date or today):
         raise ServiceError(
             f"The academic year {year.name} ended on {year.end_date}.", code="year_ended"
         )
 
-    current = _open_enrollment(student)
-    if current.section_id == section.pk:
-        raise ServiceError("The student is already in this section.", code="same_section")
-
     before = current.section_id
-    if current.section_id is None:
-        current.section = section
-        current.save(update_fields=["section", "updated_at"])
+    pending = current.section_id is not None and current.started_on > today
+    if pending:
+        # A move that hasn't happened yet is revised, not stacked on.
+        previous = _previous_enrollment(current)
+        if previous is not None and previous.section_id == section.pk:
+            current.electives.all().delete()
+            current.delete()
+            previous.status, previous.ended_on, previous.end_reason = Enrollment.Status.ACTIVE, None, ""
+            previous.save(update_fields=["status", "ended_on", "end_reason", "updated_at"])
+            log(AuditLog.Action.UPDATE, instance=student, module="students", actor=by,
+                changes={"section": {"before": before, "after": section.pk}},
+                metadata={"operation": "cancel_scheduled_move", "reason": reason})
+            return student
+        if previous is not None and effective < previous.started_on:
+            raise ServiceError(
+                f"The date cannot be before the current class started ({previous.started_on}).",
+                code="invalid_date",
+            )
+        _check_capacity(section, effective, allow_over_capacity, exclude_student=student.pk)
+        if previous is not None:
+            previous.ended_on = effective
+            previous.end_reason = reason or previous.end_reason
+            previous.save(update_fields=["ended_on", "end_reason", "updated_at"])
+        current.electives.all().delete()
+        current.section, current.started_on = section, effective
+        current.save(update_fields=["section", "started_on", "updated_at"])
+        if previous is not None:
+            _carry_electives(previous, current)
     else:
-        on_date = on_date or timezone.localdate()
-        _close(current, Enrollment.Status.MOVED, on_date, reason)
-        new = Enrollment.objects.create(
-            organization_id=student.organization_id,
-            student=student,
-            campus_id=student.campus_id,
-            section=section,
-            started_on=on_date,
-        )
-        _carry_electives(current, new)
+        if current.section_id == section.pk:
+            raise ServiceError("The student is already in this section.", code="same_section")
+        _check_capacity(section, effective, allow_over_capacity, exclude_student=student.pk)
+        if current.section_id is None:
+            current.section = section
+            current.save(update_fields=["section", "updated_at"])
+        else:
+            _close(current, Enrollment.Status.MOVED, effective, reason)
+            new = Enrollment.objects.create(
+                organization_id=student.organization_id,
+                student=student,
+                campus_id=student.campus_id,
+                section=section,
+                started_on=effective,
+            )
+            _carry_electives(current, new)
 
     log(
         AuditLog.Action.UPDATE,
@@ -243,13 +312,14 @@ def place_student(*, student: Student, section, on_date=None, reason="", by=None
         module="students",
         actor=by,
         changes={"section": {"before": before, "after": section.pk}},
-        metadata={"operation": "place", "reason": reason},
+        metadata={"operation": "place", "reason": reason, "on": str(effective)},
     )
     return student
 
 
 @transaction.atomic
-def promote_section(*, section, to_section, exclude=(), on_date=None, reason="", by=None) -> list[Student]:
+def promote_section(*, section, to_section, exclude=(), on_date=None, reason="", by=None,
+                    allow_over_capacity=False) -> list[Student]:
     """Move everyone in ``section`` (except ``exclude``) to ``to_section``:
     the end-of-year promotion of a whole class, or merging two sections.
 
@@ -268,7 +338,8 @@ def promote_section(*, section, to_section, exclude=(), on_date=None, reason="",
         try:
             with transaction.atomic():
                 moved.append(place_student(
-                    student=student, section=to_section, on_date=on_date, reason=reason, by=by
+                    student=student, section=to_section, on_date=on_date, reason=reason, by=by,
+                    allow_over_capacity=allow_over_capacity,
                 ))
         except ServiceError as exc:
             failures.append({"student": student.pk, "student_number": student.student_number,

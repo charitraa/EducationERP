@@ -81,8 +81,16 @@ Also in Phase 3:
 - **Timetable generator**: fills the week from each assignment's
   `periods_per_week`.
 - **Student electives**, and **whole-class promotion**.
+- **History stays true.** Moves, promotions, elective choices, lessons, bell
+  times and teacher hand-overs all take effect from a date, and the past is
+  never rewritten.
+- **Academic calendar**: holidays, closures, exam days, make-up days.
+- **Real-life guards**: teachers leaving with classes, substitutes on leave,
+  closed rooms, full classes and rooms, curriculum changes mid-year.
 
 Details: [`docs/phase-3b.md`](docs/phase-3b.md) and [`docs/phase-3.md`](docs/phase-3.md).
+Every real-life situation checked, and what attendance (Phase 4) must do:
+[`docs/phase-3-real-life.md`](docs/phase-3-real-life.md).
 
 ---
 
@@ -156,7 +164,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 453 tests, in-memory SQLite
+python manage.py test          # 513 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -612,6 +620,8 @@ GET    /api/v1/timetable/me/                                        own timetabl
 POST   /api/v1/timetable/hand-over/                                 give lessons to another teacher
 POST   /api/v1/timetable/generate/                                  fill the week automatically (dry run by default)
 GET    /api/v1/lesson-changes/                                      CRUD: one lesson on one date
+POST   /api/v1/bell-schedules/{id}/retime/                          new bell times from a date
+GET    /api/v1/calendar/                                            CRUD: holidays, closures, exams, make-up days
 
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
@@ -721,7 +731,7 @@ placeholders.
 | ~~2~~ | Students, parents, staff, admissions, enrollment | 1 |
 | ~~3a~~ | Academics: departments, programs, subjects, curriculum, years, terms, batches, sections, rooms, teaching assignments, placement | 2 (teachers, enrollment) |
 | ~~3b~~ | Timetable: periods, weekly schedule, clash detection | 3a |
-| **4** | Attendance: one engine for manual / QR / biometric | 3 (a class and timetable to take attendance in) |
+| **4** | Attendance: class sessions from the day's lessons, one engine for manual / QR / biometric. Requirements: [`docs/phase-3-real-life.md`](docs/phase-3-real-life.md#️-for-phase-4-attendance) | 3 (dated enrollments, versioned timetable, calendar) |
 | 5 | Examinations: exams, marks, grades, results, transcripts | 3 (subjects, syllabus) |
 | 6 | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
 | 7 | Events and student points | 2 |

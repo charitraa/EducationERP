@@ -1,3 +1,5 @@
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import serializers
 
 from core.common.serializers import ensure_unique_together
@@ -7,7 +9,7 @@ from modules.academics.serializers import TenantSerializer
 from modules.staff.models import StaffMember
 
 from .models import BellSchedule, LessonChange, Period, TimetableEntry, Weekday
-from .services import entries_on
+from .services import lessons_on, span
 
 
 class BellScheduleSerializer(TenantSerializer):
@@ -43,8 +45,9 @@ class PeriodSerializer(TenantSerializer):
     class Meta:
         model = Period
         fields = ["id", "schedule", "schedule_name", "name", "start_time", "end_time",
-                  "is_break", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+                  "is_break", "valid_from", "valid_until", "created_at", "updated_at"]
+        # Validity is set by retiming the bell schedule, not by hand.
+        read_only_fields = ["id", "valid_from", "valid_until", "created_at", "updated_at"]
 
     def validate_schedule(self, schedule):
         self.own(schedule, "bell schedule")
@@ -64,10 +67,13 @@ class PeriodSerializer(TenantSerializer):
             for field in ("start_time", "end_time", "is_break"):
                 if field in attrs and attrs[field] != getattr(self.instance, field):
                     raise serializers.ValidationError(
-                        {field: "Cannot change: lessons are scheduled in this period."}
+                        {field: "Cannot change: lessons are scheduled in this period. Use the bell "
+                                "schedule's retime, which moves them from a date and keeps the past."}
                     )
 
-        others = Period.objects.filter(schedule=schedule)
+        others = Period.objects.filter(schedule=schedule).filter(
+            Q(valid_until__isnull=True) | Q(valid_until__gte=timezone.localdate())
+        )
         if self.instance is not None:
             others = others.exclude(pk=self.instance.pk)
         clash = others.filter(start_time__lt=end, end_time__gt=start).first()
@@ -78,10 +84,10 @@ class PeriodSerializer(TenantSerializer):
 
         if "name" in attrs:
             attrs["name"] = attrs["name"].strip()
-        ensure_unique_together(
-            self, attrs, ["schedule", "name"],
-            {"name": "This bell schedule already has a period with this name."},
-        )
+            if others.filter(name=attrs["name"]).exists():
+                raise serializers.ValidationError(
+                    {"name": "This bell schedule already has a period with this name."}
+                )
         return attrs
 
 
@@ -124,18 +130,37 @@ class TimetableEntrySerializer(TenantSerializer):
     end_time = serializers.TimeField(source="period.end_time", read_only=True)
     room_name = serializers.CharField(source="room.name", read_only=True, default=None)
     term_name = serializers.CharField(source="term.name", read_only=True, default=None)
+    allow_over_capacity = serializers.BooleanField(
+        write_only=True, required=False, default=False,
+        help_text="Book the room even when the class has more students than it seats.",
+    )
+    effective_from = serializers.DateField(
+        write_only=True, required=False,
+        help_text="Editing a lesson that has already run: the change applies from this date "
+                  "(default today). The lesson's past stays as it was.",
+    )
 
     class Meta:
         model = TimetableEntry
         fields = ["id", "teaching_assignment", "day_of_week", "day_name", "period", "period_name",
                   "start_time", "end_time", "section", "section_name", "subject", "subject_name",
                   "teacher", "teacher_name", "room", "room_name", "term", "term_name",
+                  "valid_from", "valid_until", "effective_from", "allow_over_capacity",
                   "combine_with", "combined_group", "created_at", "updated_at"]
         read_only_fields = ["id", "combined_group", "created_at", "updated_at"]
-        extra_kwargs = {"day_of_week": {"required": False}}
+        extra_kwargs = {
+            "day_of_week": {"required": False},
+            "valid_from": {"help_text": "First day the lesson runs. Left out on a new lesson: today "
+                                        "(or the start of the year/term if that's later)."},
+        }
 
     def validate_teaching_assignment(self, assignment):
         self.own(assignment, "teaching assignment")
+        if not assignment.is_active and (self.instance is None
+                                         or assignment.pk != self.instance.teaching_assignment_id):
+            raise serializers.ValidationError(
+                "This assignment is no longer active (its teacher handed it over)."
+            )
         if self.instance is not None and assignment.pk != self.instance.teaching_assignment_id:
             if assignment.section_id != self.instance.teaching_assignment.section_id:
                 raise serializers.ValidationError(
@@ -193,6 +218,8 @@ class TimetableEntrySerializer(TenantSerializer):
     def validate(self, attrs):
         # Kept aside for the view, which puts both lessons in one group.
         self.combine_target = attrs.pop("combine_with", None)
+        self.effective_from = attrs.pop("effective_from", None) or timezone.localdate()
+        self.allow_over_capacity = attrs.pop("allow_over_capacity", False)
         if self.combine_target is not None:
             self._take_slot_from(self.combine_target, attrs)
 
@@ -229,12 +256,30 @@ class TimetableEntrySerializer(TenantSerializer):
                 {"term": "The term belongs to another academic year than the section."}
             )
 
-        ensure_unique_together(
-            self, attrs, ["teaching_assignment", "day_of_week", "period", "term"]
-            if term is not None else ["teaching_assignment", "day_of_week", "period"],
-            {"period": "This lesson is already scheduled then."},
-            extra={} if term is not None else {"term__isnull": True},
-        )
+        year = section.academic_year
+        if self.instance is None and "valid_from" not in attrs:
+            # A lesson added mid-year runs from today, not retroactively.
+            first, _ = span(academic_year=year, term=term)
+            today = timezone.localdate()
+            attrs["valid_from"] = today if today > first else None
+        valid_from, valid_until = get("valid_from"), get("valid_until")
+        first, _ = span(academic_year=year, term=term, valid_from=valid_from, valid_until=valid_until)
+        # A period that ends (new bell times) is fine: the lesson carries on in
+        # its replacement. One that hasn't started yet can't hold earlier lessons.
+        if period.valid_from and first < period.valid_from:
+            raise serializers.ValidationError(
+                {"period": f"{period.name} at these times starts on {period.valid_from}; "
+                           "give the lesson a valid_from on or after it."}
+            )
+        if period.valid_until and first > period.valid_until:
+            raise serializers.ValidationError(
+                {"period": f"{period.name} at these times ended on {period.valid_until}."}
+            )
+        for field, value in (("valid_from", valid_from), ("valid_until", valid_until)):
+            if value is not None and not (year.start_date <= value <= year.end_date):
+                raise serializers.ValidationError({field: f"Must fall within {year.name}."})
+        if valid_from and valid_until and valid_until < valid_from:
+            raise serializers.ValidationError({"valid_until": "Cannot be before valid_from."})
         return attrs
 
 
@@ -283,6 +328,8 @@ class LessonChangeSerializer(TenantSerializer):
         self.own(teacher, "staff member")
         if teacher is not None and teacher.status == StaffMember.Status.LEFT:
             raise serializers.ValidationError("This staff member has left.")
+        if teacher is not None and teacher.status == StaffMember.Status.ON_LEAVE:
+            raise serializers.ValidationError("This staff member is on leave.")
         return teacher
 
     def validate_room(self, room):
@@ -294,8 +341,14 @@ class LessonChangeSerializer(TenantSerializer):
         cancelled, teacher, room = get("is_cancelled"), get("substitute_teacher"), get("room")
         section = entry.teaching_assignment.section
 
-        if not entries_on(day, TimetableEntry.objects.filter(pk=entry.pk)).exists():
+        lesson = next(iter(lessons_on(day, organization_id=entry.organization_id,
+                                      entries=TimetableEntry.objects.filter(pk=entry.pk))), None)
+        if lesson is None:
             raise serializers.ValidationError({"date": "The lesson doesn't take place on that date."})
+        if lesson.closed_by is not None:
+            raise serializers.ValidationError(
+                {"date": f"No classes that day: {lesson.closed_by.title}."}
+            )
         if cancelled and (teacher is not None or room is not None):
             raise serializers.ValidationError(
                 "A cancelled lesson has no substitute or room; leave those empty."
@@ -326,6 +379,11 @@ class HandOverSerializer(serializers.Serializer):
         help_text="The assignments whose lessons move. Include every section of a combined class.",
     )
     teacher = serializers.PrimaryKeyRelatedField(queryset=StaffMember.objects.all())
+    on = serializers.DateField(
+        required=False,
+        help_text="The new teacher takes over from this date (default today). Lessons before it "
+                  "keep the old teacher.",
+    )
 
     def validate_teacher(self, teacher):
         if teacher.organization_id != self.context["organization_id"]:
@@ -410,6 +468,42 @@ class LessonSerializer(serializers.Serializer):
     room = serializers.IntegerField(source="room.pk", default=None)
     room_name = serializers.CharField(source="room.name", default=None)
     is_cancelled = serializers.BooleanField()
+    closed_by = serializers.CharField(
+        source="closed_by.title", default=None,
+        help_text="The holiday, closure or exam day that suspends the lesson, if any.",
+    )
     change = serializers.IntegerField(source="change.pk", default=None)
     note = serializers.CharField(source="change.note", default="")
     combined_group = serializers.UUIDField(source="entry.combined_group")
+
+
+class RetimeSerializer(serializers.Serializer):
+    class NewTimes(serializers.Serializer):
+        period = serializers.PrimaryKeyRelatedField(queryset=Period.objects.all())
+        start_time = serializers.TimeField()
+        end_time = serializers.TimeField()
+
+    effective_from = serializers.DateField(help_text="The first day of the new bell times.")
+    periods = NewTimes(many=True)
+
+    def validate_effective_from(self, value):
+        if value < timezone.localdate():
+            raise serializers.ValidationError("Can't change bell times in the past.")
+        return value
+
+    def validate(self, attrs):
+        schedule = self.context["schedule"]
+        new_times = {}
+        for row in attrs["periods"]:
+            period = row["period"]
+            if period.schedule_id != schedule.pk:
+                raise serializers.ValidationError({"periods": f"Unknown period {period.pk}."})
+            if period.valid_until is not None and period.valid_until < attrs["effective_from"]:
+                raise serializers.ValidationError({"periods": f"{period.name} has already ended."})
+            if period in new_times:
+                raise serializers.ValidationError({"periods": f"{period.name} is listed twice."})
+            new_times[period] = (row["start_time"], row["end_time"])
+        if not new_times:
+            raise serializers.ValidationError({"periods": "Give at least one period."})
+        attrs["new_times"] = new_times
+        return attrs

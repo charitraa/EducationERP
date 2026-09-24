@@ -18,8 +18,14 @@ register_permissions(
             "academics.manage_classes",
             "Manage rooms, batches, sections and teaching assignments",
         ),
+        PermissionSpec(
+            "academics.manage_calendar",
+            "Manage the academic calendar: holidays, closures, exam days, make-up days",
+        ),
     ]
 )
 
-grant_to_system_role("campus-admin", ["academics.view", "academics.manage_classes"])
+grant_to_system_role(
+    "campus-admin", ["academics.view", "academics.manage_classes", "academics.manage_calendar"]
+)
 grant_to_system_role("staff", ["academics.view"])

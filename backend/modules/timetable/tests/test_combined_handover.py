@@ -1,5 +1,8 @@
 """Combined classes and handing lessons over to another teacher."""
 import uuid
+from datetime import timedelta
+
+from django.utils import timezone
 
 from tests.factories import (
     create_staff_member,
@@ -108,11 +111,16 @@ class HandOverTests(TimetableTestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual({a["teacher"] for a in response.data}, {self.gita.pk})
+        # The lesson already ran with Hari: that stays true. Gita takes it from today.
+        today = timezone.localdate()
         self.a_lesson.refresh_from_db()
-        self.assertEqual(self.a_lesson.teaching_assignment.teacher_id, self.gita.pk)
-        # The old assignment stays, without lessons, as a record.
-        self.assertTrue(TeachingAssignment.objects.filter(pk=self.a_physics.pk).exists())
-        self.assertFalse(self.a_physics.timetable_entries.exists())
+        self.assertEqual(self.a_lesson.teaching_assignment.teacher_id, self.hari.pk)
+        self.assertEqual(self.a_lesson.valid_until, today - timedelta(days=1))
+        successor = TimetableEntry.objects.get(valid_from=today, teaching_assignment__section=self.section_a)
+        self.assertEqual(successor.teaching_assignment.teacher_id, self.gita.pk)
+        # The old assignment stays as a record, retired.
+        self.a_physics.refresh_from_db()
+        self.assertFalse(self.a_physics.is_active)
 
     def test_a_clash_moves_nothing(self):
         gita_elsewhere = create_teaching_assignment(self.section_b, self.chemistry, self.gita)
@@ -149,3 +157,46 @@ class HandOverTests(TimetableTestCase):
         self.assertEqual(self.hand_over([self.a_physics], self.hari).status_code, 400)
         self.authenticate(user_with_system_role(self.org, "staff", email="t@kmc.test"))
         self.assertEqual(self.hand_over([self.a_physics], self.gita).status_code, 403)
+
+
+class CombinedClassCoverTests(TimetableTestCase):
+    """Hari is absent: Sita covers the combined Physics class of 11 A and 11 B."""
+
+    def setUp(self):
+        super().setUp()
+        from .test_lesson_changes import next_monday
+
+        self.monday = next_monday().isoformat()
+        self.a = self.schedule(self.a_physics, self.p1, room=self.r101.pk,
+                               valid_from=timezone.localdate().isoformat()).data["id"]
+        self.b = self.client.post(f"{API}/timetable/", {"teaching_assignment": self.b_physics.pk,
+                                                        "combine_with": self.a}).data["id"]
+
+    def cover(self, entry, **data):
+        return self.client.post(f"{API}/lesson-changes/", {"entry": entry, "date": self.monday, **data})
+
+    def teachers_that_day(self):
+        day = self.client.get(f"{API}/timetable/day/", {"date": self.monday}).data
+        return {x["section_name"]: x["teacher"] for x in day}
+
+    def test_cover_for_one_section_covers_the_whole_class(self):
+        response = self.cover(self.a, substitute_teacher=self.sita.pk)
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(self.teachers_that_day(), {"Grade 11 A": self.sita.pk, "Grade 11 B": self.sita.pk})
+
+    def test_changing_and_removing_the_cover_follows_too(self):
+        from ..models import LessonChange
+
+        change = self.cover(self.a, substitute_teacher=self.sita.pk).data["id"]
+        self.client.patch(f"{API}/lesson-changes/{change}/", {"substitute_teacher": None, "is_cancelled": True},
+                          format="json")
+        self.assertEqual(set(LessonChange.objects.values_list("is_cancelled", flat=True)), {True})
+
+        self.client.delete(f"{API}/lesson-changes/{change}/")
+        self.assertFalse(LessonChange.objects.exists())
+
+    def test_a_second_change_for_the_other_section_is_refused(self):
+        self.cover(self.a, substitute_teacher=self.sita.pk)
+
+        self.assertEqual(self.cover(self.b, is_cancelled=True).status_code, 400)

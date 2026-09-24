@@ -3,7 +3,20 @@ from rest_framework import serializers
 from .models import Campus, Organization
 
 
-class OrganizationSerializer(serializers.ModelSerializer):
+class LowercaseCodeMixin:
+    """Codes are stored lower-case. Normalise the input before the model's
+    validator (lower-case only) sees it, so "KMC" is accepted as "kmc"
+    instead of refused."""
+
+    def to_internal_value(self, data):
+        code = data.get("code") if hasattr(data, "get") else None
+        if isinstance(code, str):
+            data = data.copy()
+            data["code"] = code.strip().lower()
+        return super().to_internal_value(data)
+
+
+class OrganizationSerializer(LowercaseCodeMixin, serializers.ModelSerializer):
     campus_count = serializers.IntegerField(read_only=True)
 
     class Meta:
@@ -14,9 +27,6 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "is_active", "campus_count", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at", "campus_count"]
-
-    def validate_code(self, value):
-        return value.lower()
 
 
 class OrganizationWriteSerializer(OrganizationSerializer):
@@ -30,7 +40,7 @@ class OrganizationWriteSerializer(OrganizationSerializer):
         return super().update(instance, validated_data)
 
 
-class CampusSerializer(serializers.ModelSerializer):
+class CampusSerializer(LowercaseCodeMixin, serializers.ModelSerializer):
     organization_name = serializers.CharField(source="organization.name", read_only=True)
 
     class Meta:
@@ -42,9 +52,6 @@ class CampusSerializer(serializers.ModelSerializer):
         ]
         # Tenant is taken from the authenticated user, never the payload.
         read_only_fields = ["id", "organization", "created_at", "updated_at"]
-
-    def validate_code(self, value):
-        return value.lower()
 
     def validate(self, attrs):
         """Campus codes, and the main campus, are unique within an organization."""

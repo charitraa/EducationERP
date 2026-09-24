@@ -1,3 +1,5 @@
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import serializers
 
 from core.common.serializers import (
@@ -12,6 +14,7 @@ from modules.students.models import Enrollment, Student
 from .models import (
     AcademicYear,
     Batch,
+    CalendarEvent,
     CurriculumSubject,
     Department,
     Program,
@@ -164,7 +167,35 @@ class CurriculumSubjectSerializer(TenantSerializer):
             self, attrs, ["program", "level", "subject"],
             {"subject": "This subject is already in the curriculum at this level."},
         )
+        if self.instance is not None and self.instance.is_elective and attrs.get("is_elective") is False:
+            self._check_can_become_compulsory(program, level, self.instance.subject)
         return attrs
+
+    def _check_can_become_compulsory(self, program, level, subject):
+        """Every student would take it, so it can't still run in parallel with
+        another subject, and current students' choices of it would mean
+        nothing."""
+        today = timezone.localdate()
+        sections = Section.objects.filter(program=program, level=level, academic_year__end_date__gte=today)
+        for section in sections:
+            others = set(
+                TeachingAssignment.objects.filter(section=section).exclude(subject=subject)
+                .values_list("subject_id", flat=True)
+            )
+            clash = _parallel_lesson(section, subject.pk, others)
+            if clash is not None:
+                raise serializers.ValidationError(
+                    {"is_elective": f"{subject.name} runs at the same time as {clash} in "
+                                    f"{section.display_name}. Change the timetable first."}
+                )
+        chosen = StudentElective.objects.on(today).filter(
+            subject=subject, enrollment__section__in=sections
+        ).count()
+        if chosen:
+            raise serializers.ValidationError(
+                {"is_elective": f"{chosen} current students chose it as an elective. "
+                                "Make it compulsory at the start of a new year, or end those choices first."}
+            )
 
 
 class AcademicYearSerializer(TenantSerializer):
@@ -295,6 +326,18 @@ class RoomSerializer(TenantSerializer):
         ensure_unique_together(
             self, attrs, ["campus", "code"], {"code": "This campus already has a room with this code."}
         )
+        if self.instance is not None and self.instance.is_active and attrs.get("is_active") is False:
+            # Lessons would carry on in a room nobody can use.
+            today = timezone.localdate()
+            lessons = self.instance.timetable_entries.filter(
+                Q(valid_until__isnull=True) | Q(valid_until__gte=today)
+            ).count()
+            moves = self.instance.lesson_changes.filter(date__gte=today, is_cancelled=False).count()
+            if lessons or moves:
+                raise serializers.ValidationError(
+                    {"is_active": f"{lessons} weekly lessons and {moves} upcoming lesson changes use "
+                                  "this room. Move them first (a room change can start from a date)."}
+                )
         return attrs
 
 
@@ -329,7 +372,7 @@ class SectionSerializer(TenantSerializer):
         # isn't annotated, so count directly.
         count = getattr(section, "student_count", None)
         if count is None:
-            count = section.enrollments.filter(status="active").count()
+            count = Enrollment.objects.on().filter(section=section).count()
         return count
 
     def validate_academic_year(self, year):
@@ -413,7 +456,7 @@ class TeachingAssignmentSerializer(TenantSerializer):
     class Meta:
         model = TeachingAssignment
         fields = ["id", "section", "section_name", "subject", "subject_name", "teacher",
-                  "teacher_name", "periods_per_week", "created_at"]
+                  "teacher_name", "role", "periods_per_week", "is_active", "created_at"]
         read_only_fields = ["id", "created_at"]
         extra_kwargs = {"periods_per_week": {"min_value": 1, "max_value": 60}}
 
@@ -440,8 +483,8 @@ class TeachingAssignmentSerializer(TenantSerializer):
                             f"of {section.program.name}. Add it to the curriculum first."}
             )
         ensure_unique_together(
-            self, attrs, ["section", "subject", "teacher"],
-            {"teacher": "This teacher already teaches this subject to this section."},
+            self, attrs, ["section", "subject", "teacher", "role"],
+            {"teacher": "This teacher already has this role for this subject in this section."},
         )
         return attrs
 
@@ -456,13 +499,18 @@ class SectionStudentSerializer(serializers.Serializer):
 
 
 class StudentElectiveSerializer(TenantSerializer):
-    """Record that a student takes an elective in the class they're in now.
+    """Record that a student takes an elective, from today.
 
-    Written with ``student``; stored against their open enrollment, so the
-    choice stays with that class in their history."""
+    Written with ``student``; stored against their enrollment in the class
+    they're in today (or in ``section``, e.g. next year's class they've been
+    promoted into), so the choice stays with that class in their history."""
 
     student = serializers.PrimaryKeyRelatedField(
         queryset=Student.objects.all(), write_only=True, help_text="Uses the student's current class."
+    )
+    in_section = serializers.PrimaryKeyRelatedField(
+        queryset=Section.objects.all(), write_only=True, required=False,
+        help_text="Choose for this class of the student's instead of today's, e.g. next year's.",
     )
     subject = serializers.PrimaryKeyRelatedField(queryset=Subject.objects.all())
     student_id = serializers.IntegerField(source="enrollment.student_id", read_only=True)
@@ -474,9 +522,10 @@ class StudentElectiveSerializer(TenantSerializer):
 
     class Meta:
         model = StudentElective
-        fields = ["id", "student", "student_id", "student_name", "student_number", "enrollment",
-                  "section", "section_name", "subject", "subject_name", "created_at"]
-        read_only_fields = ["id", "enrollment", "created_at"]
+        fields = ["id", "student", "in_section", "student_id", "student_name", "student_number",
+                  "enrollment", "section", "section_name", "subject", "subject_name",
+                  "started_on", "ended_on", "created_at"]
+        read_only_fields = ["id", "enrollment", "started_on", "ended_on", "created_at"]
 
     def validate_student(self, student):
         return self.own(student, "student")
@@ -485,10 +534,17 @@ class StudentElectiveSerializer(TenantSerializer):
         return self.own(subject, "subject")
 
     def validate(self, attrs):
-        enrollment = (
-            attrs.pop("student").enrollments.filter(status=Enrollment.Status.ACTIVE)
-            .select_related("section__program").first()
-        )
+        today = timezone.localdate()
+        student, in_section = attrs.pop("student"), attrs.pop("in_section", None)
+        if in_section is not None:
+            # A class the student is in or will be in: not one they've left.
+            enrollment = student.enrollments.filter(section=in_section).filter(
+                Q(ended_on__isnull=True) | Q(ended_on__gt=today)
+            ).first()
+            if enrollment is None:
+                raise serializers.ValidationError({"in_section": "The student isn't in that class."})
+        else:
+            enrollment = Enrollment.objects.on(today).filter(student=student).first()
         if enrollment is None or enrollment.section is None:
             raise serializers.ValidationError({"student": "The student isn't placed in a class."})
         section, subject = enrollment.section, attrs["subject"]
@@ -499,10 +555,11 @@ class StudentElectiveSerializer(TenantSerializer):
                 {"subject": f"{subject.name} is not an elective for {section.display_name} "
                             f"of {section.program.name}."}
             )
-        if enrollment.electives.filter(subject=subject).exists():
+        open_choices = enrollment.electives.filter(ended_on__isnull=True)
+        if open_choices.filter(subject=subject).exists():
             raise serializers.ValidationError({"subject": "The student already takes this subject."})
 
-        taken = list(enrollment.electives.values_list("subject_id", flat=True))
+        taken = list(open_choices.values_list("subject_id", flat=True))
         clash = _parallel_lesson(section, subject.pk, taken)
         if clash is not None:
             raise serializers.ValidationError(
@@ -510,6 +567,7 @@ class StudentElectiveSerializer(TenantSerializer):
                             f"which the student already takes."}
             )
         attrs["enrollment"] = enrollment
+        attrs["started_on"] = max(today, enrollment.started_on)
         return attrs
 
 
@@ -523,6 +581,8 @@ def _parallel_lesson(section, subject_id, other_subject_ids):
         return None
     rows = list(
         TeachingAssignment.objects.filter(
+            Q(timetable_entries__valid_until__isnull=True)
+            | Q(timetable_entries__valid_until__gte=timezone.localdate()),
             section=section, subject_id__in=[subject_id, *other_subject_ids],
             timetable_entries__isnull=False, timetable_entries__deleted_at__isnull=True,
         ).values(
@@ -553,6 +613,10 @@ class PromoteSectionSerializer(serializers.Serializer):
     )
     on_date = serializers.DateField(required=False, help_text="When the move takes effect. Default: today.")
     reason = serializers.CharField(required=False, allow_blank=True, max_length=255, default="")
+    allow_over_capacity = serializers.BooleanField(
+        required=False, default=False,
+        help_text="Move even when the class is at its capacity.",
+    )
 
     def validate_to_section(self, section):
         source = self.context["section"]
@@ -563,3 +627,59 @@ class PromoteSectionSerializer(serializers.Serializer):
         if section.campus_id != source.campus_id:
             raise serializers.ValidationError("The section is at another campus.")
         return section
+
+
+class CalendarEventSerializer(TenantSerializer):
+    campus = serializers.PrimaryKeyRelatedField(
+        queryset=Campus.objects.all(), required=False, allow_null=True, help_text="Empty: every campus."
+    )
+    program = serializers.PrimaryKeyRelatedField(
+        queryset=Program.objects.all(), required=False, allow_null=True, help_text="Empty: every program."
+    )
+    suspends_classes = serializers.BooleanField(
+        required=False,
+        help_text="Left out: yes for holidays, closures and exams; no for events and make-up days.",
+    )
+    campus_name = serializers.CharField(source="campus.name", read_only=True, default=None)
+    program_name = serializers.CharField(source="program.name", read_only=True, default=None)
+
+    class Meta:
+        model = CalendarEvent
+        fields = ["id", "organization", "kind", "title", "description", "start_date", "end_date",
+                  "campus", "campus_name", "program", "program_name", "level", "suspends_classes",
+                  "runs_timetable_of", "created_at", "updated_at"]
+        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+
+    def validate_campus(self, campus):
+        return self.own(campus, "campus")
+
+    def validate_program(self, program):
+        return self.own(program, "program")
+
+    def validate(self, attrs):
+        get = lambda field: self.current(attrs, field)  # noqa: E731
+        kind = get("kind")
+        if self.instance is None and "suspends_classes" not in attrs:
+            attrs["suspends_classes"] = CalendarEvent.SUSPENDS_BY_DEFAULT[kind]
+        start, end = get("start_date"), get("end_date")
+        if end < start:
+            raise serializers.ValidationError({"end_date": "Cannot be before the start date."})
+        program, level = get("program"), get("level")
+        if level is not None:
+            if program is None:
+                raise serializers.ValidationError({"level": "Give the program too."})
+            if not program.has_level(level):
+                raise serializers.ValidationError(
+                    {"level": f"{program.name} runs from level {program.first_level} to {program.last_level}."}
+                )
+        weekday = get("runs_timetable_of")
+        if kind == CalendarEvent.Kind.MAKEUP_DAY:
+            if weekday not in range(1, 8):
+                raise serializers.ValidationError(
+                    {"runs_timetable_of": "A make-up day runs one weekday's timetable (1–7)."}
+                )
+            if get("suspends_classes"):
+                raise serializers.ValidationError({"suspends_classes": "A make-up day has classes."})
+        elif weekday is not None:
+            raise serializers.ValidationError({"runs_timetable_of": "Only for make-up days."})
+        return attrs

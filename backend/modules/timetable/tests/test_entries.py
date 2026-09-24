@@ -2,7 +2,7 @@
 guards academics keeps for records the timetable uses."""
 from datetime import timedelta
 
-from django.db import IntegrityError, connection, transaction
+from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from tests.base import APITestCaseBase
@@ -132,12 +132,10 @@ class ScheduleTests(TimetableTestCase):
 
         self.assertEqual(self.schedule(assignment, self.p1).status_code, 400)
 
-    def test_exact_duplicate_is_rejected_and_backed_by_the_database(self):
+    def test_exact_duplicate_is_refused_as_a_clash(self):
         self.schedule(self.a_physics, self.p1)
 
-        self.assertEqual(self.schedule(self.a_physics, self.p1).status_code, 400)
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            create_timetable_entry(self.a_physics, self.p1, MONDAY)
+        self.assertClash(self.schedule(self.a_physics, self.p1), "teacher")
 
 
 class ClashTests(TimetableTestCase):
@@ -340,10 +338,20 @@ class AcademicsGuardTests(TimetableTestCase):
                     f"terms/{self.term.pk}"):
             self.assertEqual(self.client.delete(f"{API}/{url}/").status_code, 409, url)
 
-    def test_assignment_can_go_once_its_lessons_are_removed(self):
-        self.client.delete(f"{API}/timetable/{self.entry.pk}/")
+    def test_an_assignment_whose_lessons_ran_is_kept_and_retired(self):
+        """Its lessons are history (attendance points at them), so it stays;
+        it can be marked inactive instead."""
+        self.client.delete(f"{API}/timetable/{self.entry.pk}/")  # ends the lesson from today
 
-        self.assertEqual(self.client.delete(f"{API}/teaching-assignments/{self.a_physics.pk}/").status_code, 204)
+        self.assertEqual(self.client.delete(f"{API}/teaching-assignments/{self.a_physics.pk}/").status_code, 409)
+        retire = self.client.patch(f"{API}/teaching-assignments/{self.a_physics.pk}/", {"is_active": False})
+        self.assertEqual(retire.status_code, 200)
+
+    def test_an_assignment_whose_lessons_never_ran_can_go(self):
+        future = self.schedule(self.b_physics, self.p2, valid_from=(self.year.end_date - timedelta(days=7)).isoformat())
+        self.client.delete(f"{API}/timetable/{future.data['id']}/")
+
+        self.assertEqual(self.client.delete(f"{API}/teaching-assignments/{self.b_physics.pk}/").status_code, 204)
 
     def test_teacher_of_a_timetabled_assignment_cannot_be_swapped(self):
         swapped = self.client.patch(f"{API}/teaching-assignments/{self.a_physics.pk}/", {"teacher": self.sita.pk})

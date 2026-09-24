@@ -104,9 +104,14 @@ class TransferSerializer(serializers.Serializer):
 class PlacementSerializer(serializers.Serializer):
     section = serializers.PrimaryKeyRelatedField(queryset=Section.objects.all())
     on_date = serializers.DateField(
-        required=False, help_text="When a move takes effect. Default: today. Ignored for a first placement."
+        required=False, help_text="When a move takes effect. Default: today. May be in the future: "
+                                  "the student stays in their class until then. Ignored for a first placement."
     )
     reason = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    allow_over_capacity = serializers.BooleanField(
+        required=False, default=False,
+        help_text="Place even when the class is at its capacity.",
+    )
 
     def validate_section(self, section):
         if section.organization_id != self.context["student"].organization_id:

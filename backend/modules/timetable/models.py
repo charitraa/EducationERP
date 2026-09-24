@@ -8,6 +8,10 @@ one weekday, optionally in a room and optionally for one term only.
 Clashes are found by clock time, not by period, so two shifts with different
 bells at the same campus are still checked against each other.
 
+History stays true: a lesson or period that changes after it has run is
+not edited in place. The old row ends (``valid_until``) and a new one starts
+(``valid_from``), so what happened on any past date can still be read.
+
 Entries sharing a ``combined_group`` are one **combined class**: a teacher
 teaching several sections together, in one room, at one time. A
 **lesson change** alters one entry on one date: a substitute teacher, another
@@ -63,16 +67,22 @@ class Period(OrganizationOwnedModel):
     start_time = models.TimeField()
     end_time = models.TimeField()
     is_break = models.BooleanField(default=False, help_text="Breaks can't have lessons.")
+    valid_from = models.DateField(null=True, blank=True, help_text="Empty: always.")
+    valid_until = models.DateField(
+        null=True, blank=True, help_text="Set when the bell times change, e.g. winter timings."
+    )
 
     class Meta:
         db_table = "timetable_period"
         ordering = ["schedule", "start_time", "pk"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["schedule", "name"], condition=ALIVE, name="uniq_period_name"
-            ),
             models.CheckConstraint(
                 condition=Q(end_time__gt=F("start_time")), name="period_times_ordered"
+            ),
+            models.CheckConstraint(
+                condition=Q(valid_from__isnull=True) | Q(valid_until__isnull=True)
+                | Q(valid_until__gte=F("valid_from")),
+                name="period_validity_ordered",
             ),
         ]
 
@@ -104,28 +114,29 @@ class TimetableEntry(OrganizationOwnedModel):
         null=True, blank=True, db_index=True,
         help_text="Entries with the same value are one combined class of several sections.",
     )
+    valid_from = models.DateField(
+        null=True, blank=True, help_text="First day the lesson runs. Empty: from the start of the year/term."
+    )
+    valid_until = models.DateField(
+        null=True, blank=True, help_text="Last day the lesson runs. Empty: to the end of the year/term."
+    )
 
     class Meta:
         db_table = "timetable_entry"
         ordering = ["day_of_week", "period__start_time", "pk"]
         verbose_name_plural = "timetable entries"
         indexes = [models.Index(fields=["organization", "day_of_week"])]
+        # Overlaps (the same teacher, room or section twice at once, and so
+        # an exact duplicate too) are checked in the service under row locks:
+        # "overlapping dates and times" can't be a portable constraint.
         constraints = [
             models.CheckConstraint(
                 condition=Q(day_of_week__gte=1, day_of_week__lte=7), name="timetable_entry_weekday"
             ),
-            # Exact duplicates only; overlapping times are checked in the
-            # service under row locks, which the database can't express
-            # portably (MySQL has no exclusion constraints).
-            models.UniqueConstraint(
-                fields=["teaching_assignment", "day_of_week", "period"],
-                condition=ALIVE & Q(term__isnull=True),
-                name="uniq_timetable_entry_all_year",
-            ),
-            models.UniqueConstraint(
-                fields=["teaching_assignment", "day_of_week", "period", "term"],
-                condition=ALIVE & Q(term__isnull=False),
-                name="uniq_timetable_entry_term",
+            models.CheckConstraint(
+                condition=Q(valid_from__isnull=True) | Q(valid_until__isnull=True)
+                | Q(valid_until__gte=F("valid_from")),
+                name="timetable_entry_validity_ordered",
             ),
         ]
 

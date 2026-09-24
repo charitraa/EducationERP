@@ -1,14 +1,17 @@
 from django.db import transaction
 from django.db.models import Count, Q
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from core.audit.models import AuditLog
-from core.audit.services import log
+from core.audit.services import log, log_update, snapshot
 from core.common.exceptions import ConflictError
 from core.common.mixins import CampusScopedViewSet, OrganizationScopedViewSet
+from core.common.permissions import HasPermission
+from core.permissions.selectors import campus_ids_with_permission
 from modules.students.models import Enrollment
 from modules.students.selectors import students_in_section
 from modules.students.services import promote_section
@@ -16,6 +19,7 @@ from modules.students.services import promote_section
 from .models import (
     AcademicYear,
     Batch,
+    CalendarEvent,
     CurriculumSubject,
     Department,
     Program,
@@ -30,6 +34,7 @@ from .selectors import students_taking
 from .serializers import (
     AcademicYearSerializer,
     BatchSerializer,
+    CalendarEventSerializer,
     CurriculumSubjectSerializer,
     DepartmentSerializer,
     ProgramSerializer,
@@ -148,6 +153,15 @@ class CurriculumSubjectViewSet(AcademicsViewSet):
                 "Sections are being taught this subject. Remove those teaching assignments first.",
                 code="in_use",
             )
+        chosen = StudentElective.objects.on().filter(
+            subject_id=instance.subject_id, enrollment__section__program_id=instance.program_id,
+            enrollment__section__level=instance.level,
+        ).count()
+        if chosen:
+            raise ConflictError(
+                f"{chosen} current students take this elective. End their choices first.",
+                code="in_use",
+            )
         super().perform_destroy(instance)
 
 
@@ -225,8 +239,6 @@ class SectionViewSet(CampusAcademicsViewSet):
 
     queryset = Section.objects.select_related(
         "academic_year", "campus", "program", "class_teacher", "home_room", "batch"
-    ).annotate(
-        student_count=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.ACTIVE))
     )
     serializer_class = SectionSerializer
     filterset_fields = ["academic_year", "campus", "program", "level", "batch", "class_teacher"]
@@ -237,6 +249,14 @@ class SectionViewSet(CampusAcademicsViewSet):
                                   promote=["students.place"])
     in_use = {"enrollments": "student placements (current or past)",
               "teaching_assignments": "teaching assignments"}
+
+    def get_queryset(self):
+        # Students in the class today, by enrollment dates: a promotion
+        # scheduled for next year doesn't empty this year's class early.
+        today = timezone.localdate()
+        in_class = (Q(enrollments__started_on__lte=today)
+                    & (Q(enrollments__ended_on__isnull=True) | Q(enrollments__ended_on__gt=today)))
+        return super().get_queryset().annotate(student_count=Count("enrollments", filter=in_class))
 
     @extend_schema(tags=["academics"], summary="Students currently in a section",
                    parameters=[OpenApiParameter("subject", int, description=(
@@ -332,14 +352,76 @@ class StudentElectiveViewSet(CampusAcademicsViewSet):
         if params.get("student", "").isdigit():
             qs = qs.filter(enrollment__student_id=params["student"])
         if params.get("current") == "true":
-            qs = qs.filter(enrollment__status=Enrollment.Status.ACTIVE)
+            qs = qs.filter(pk__in=StudentElective.objects.on().values("pk"))
         return qs
 
     def campus_of(self, validated_data):
         return validated_data["enrollment"].campus_id
 
     def perform_destroy(self, instance):
-        if instance.enrollment.status != Enrollment.Status.ACTIVE:
+        """Dropping a subject ends the choice today; the record stays, so
+        attendance and marks from before still show the subject was taken.
+        A choice made today, or not started yet, is simply removed."""
+        today = timezone.localdate()
+        enrollment = instance.enrollment
+        if instance.ended_on is not None or (enrollment.ended_on is not None and enrollment.ended_on <= today):
             raise ConflictError("Choices of an earlier class are history and can't be removed.",
                                 code="history")
-        super().perform_destroy(instance)
+        if instance.started_on >= today:
+            super().perform_destroy(instance)
+            return
+        before = snapshot(instance)
+        instance.ended_on = today
+        instance.save(update_fields=["ended_on", "updated_at"])
+        log_update(self.request, instance, before=before, module=self.audit_module)
+
+
+CALENDAR = "academics.manage_calendar"
+
+
+@_schema("academics", "calendar event")
+class CalendarEventViewSet(AcademicsViewSet):
+    """The academic calendar. ``?from=&to=`` gives the events overlapping a
+    span; a campus-scoped role sees its campuses' events and the ones for
+    every campus. Only an organization-wide role writes events for every
+    campus."""
+
+    queryset = CalendarEvent.objects.select_related("campus", "program")
+    serializer_class = CalendarEventSerializer
+    filterset_fields = ["kind", "campus", "program", "level", "suspends_classes"]
+    search_fields = ["title"]
+    ordering_fields = ["start_date"]
+    required_permissions = _perms(CALENDAR)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        for code in HasPermission().get_required_permissions(self.request, self):
+            campus_ids = campus_ids_with_permission(self.request.user, code)
+            if campus_ids is not None:
+                qs = qs.filter(Q(campus_id__in=campus_ids) | Q(campus__isnull=True))
+                if self.action not in ("list", "retrieve"):
+                    # Writes: own campuses only, never the shared events.
+                    qs = qs.filter(campus__isnull=False)
+        params = self.request.query_params
+        if params.get("from"):
+            qs = qs.filter(end_date__gte=params["from"])
+        if params.get("to"):
+            qs = qs.filter(start_date__lte=params["to"])
+        return qs
+
+    def _check_scope(self, campus):
+        campus_ids = campus_ids_with_permission(self.request.user, CALENDAR)
+        if campus_ids is None:
+            return
+        if campus is None:
+            raise PermissionDenied("Only an organization-wide role can add events for every campus.")
+        if campus.pk not in campus_ids:
+            raise PermissionDenied("Your role does not cover this campus for this action.")
+
+    def perform_create(self, serializer):
+        self._check_scope(serializer.validated_data.get("campus"))
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._check_scope(serializer.validated_data.get("campus", serializer.instance.campus))
+        super().perform_update(serializer)

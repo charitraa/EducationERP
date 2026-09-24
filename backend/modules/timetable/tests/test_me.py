@@ -67,9 +67,10 @@ class MyTimetableTests(TimetableTestCase):
     def test_a_student_sees_compulsory_subjects_and_their_electives(self):
         self.login_as("ram.student@kmc.test", student=self.ram)
         everything = self.subjects(self.client.get(ME))
+        enrollment = Enrollment.objects.get(student=self.ram, status="active")
         StudentElective.objects.create(
-            organization=self.org, subject=self.computer,
-            enrollment=Enrollment.objects.get(student=self.ram, status="active"),
+            organization=self.org, subject=self.computer, enrollment=enrollment,
+            started_on=enrollment.started_on,
         )
 
         chosen = self.subjects(self.client.get(ME))
