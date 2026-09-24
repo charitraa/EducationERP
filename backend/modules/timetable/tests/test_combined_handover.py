@@ -200,3 +200,28 @@ class CombinedClassCoverTests(TimetableTestCase):
         self.cover(self.a, substitute_teacher=self.sita.pk)
 
         self.assertEqual(self.cover(self.b, is_cancelled=True).status_code, 400)
+
+
+class CombinedClassMakeupDayTests(TimetableTestCase):
+    """A make-up Saturday runs Monday's timetable; covering the combined
+    Physics class that day covers both sections."""
+
+    def test_cover_on_a_makeup_day_reaches_every_section(self):
+        from modules.academics.models import CalendarEvent
+        from tests.factories import create_timetable_entry
+
+        from ..models import LessonChange
+        from .test_lesson_changes import next_monday
+
+        a = create_timetable_entry(self.a_physics, self.p1, MONDAY, room=self.r101)
+        b = create_timetable_entry(self.b_physics, self.p1, MONDAY, room=self.r101)
+        TimetableEntry.objects.filter(pk__in=[a.pk, b.pk]).update(combined_group=uuid.uuid4())
+        saturday = next_monday() + timedelta(days=5)
+        CalendarEvent.objects.create(organization=self.org, kind="makeup_day", title="Make-up", start_date=saturday,
+                                     end_date=saturday, suspends_classes=False, runs_timetable_of=MONDAY)
+
+        response = self.client.post(f"{API}/lesson-changes/", {"entry": a.pk, "date": saturday.isoformat(),
+                                                              "substitute_teacher": self.sita.pk})
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(LessonChange.objects.filter(date=saturday).count(), 2)

@@ -440,6 +440,10 @@ class GenerateSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"sections": "Every section must be at the bell schedule's campus."}
             )
+        if len({s.academic_year_id for s in sections}) > 1:
+            raise serializers.ValidationError(
+                {"sections": "Generate one academic year at a time."}
+            )
         if term is not None and any(s.academic_year_id != term.academic_year_id for s in sections):
             raise serializers.ValidationError({"term": "The term belongs to another academic year."})
         if not attrs["days"] or len(set(attrs["days"])) != len(attrs["days"]):

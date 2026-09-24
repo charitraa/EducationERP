@@ -127,3 +127,19 @@ class GenerateTests(TimetableTestCase):
         response = self.generate(sections=[far_section], schedule=far_schedule.pk)
 
         self.assertEqual(response.status_code, 403)
+
+
+class GenerateOneYearTests(TimetableTestCase):
+    def test_sections_of_different_years_are_refused(self):
+        from datetime import timedelta
+
+        from tests.factories import create_academic_year, create_section
+
+        other_year = create_academic_year(self.org, name="2083/84", start=self.year.end_date + timedelta(days=1))
+        far = create_section(self.lalitpur, self.program, other_year, level=12, name="A")
+
+        response = self.client.post(GENERATE, {"sections": [self.section_a.pk, far.pk], "schedule": self.day.pk,
+                                               "days": [1]}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("one academic year", str(response.data))

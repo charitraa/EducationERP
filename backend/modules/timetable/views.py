@@ -625,11 +625,13 @@ class LessonChangeViewSet(TimetableViewSet):
     MIRRORED = ("is_cancelled", "substitute_teacher", "room", "note")
 
     def _classmates(self, change_or_entry, day):
+        """The other sections' lessons of this combined class on ``day``, by
+        the calendar (so a make-up day finds them too)."""
         entry = getattr(change_or_entry, "entry", change_or_entry)
         if entry.combined_group is None:
             return []
         members = TimetableEntry.objects.filter(combined_group=entry.combined_group).exclude(pk=entry.pk)
-        return list(entries_on(day, members))
+        return [lesson.entry for lesson in lessons_on(day, organization_id=entry.organization_id, entries=members)]
 
     def perform_create(self, serializer):
         data = serializer.validated_data
