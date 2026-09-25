@@ -4,11 +4,12 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 3 complete.** Identity (Phase 1), the student foundation
+**Status: Phase 4 complete.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
-academic years, sections, teaching assignments, student placement) and the
-weekly timetable with clash detection (Phase 3b) are built and tested. Next is
-Phase 4, attendance — see [Roadmap](#roadmap).
+academic years, sections, teaching assignments, student placement), the
+weekly timetable with clash detection (Phase 3b) and attendance (Phase 4:
+students, staff, QR and biometric devices) are built and tested. Next is
+Phase 5, examinations — see [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -89,8 +90,30 @@ Also in Phase 3:
   closed rooms, full classes and rooms, curriculum changes mid-year.
 
 Details: [`docs/phase-3b.md`](docs/phase-3b.md) and [`docs/phase-3.md`](docs/phase-3.md).
-Every real-life situation checked, and what attendance (Phase 4) must do:
+Every real-life situation checked:
 [`docs/phase-3-real-life.md`](docs/phase-3-real-life.md).
+
+## What Phase 4 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Students | `AttendanceSession`, `AttendanceRecord`, `AttendanceCorrection` | A daily roll call (schools) or attendance in every lesson (colleges), set per program. Records point at the enrollment on that date; changes after submitting keep their history |
+| Staff | `WorkSchedule`, `Punch`, `StaffAttendanceDay` | Check-in and check-out from devices, a gate QR code or the office; late and half days against the schedule; days set by hand for leave or duty |
+| Devices | `AttendanceDevice`, `BiometricIdentity` | ZKTeco readers over their push protocol, and a generic device API for anything else. A device resending punches never counts them twice |
+
+- **One engine.** Teacher app, office, QR, biometric and API all go through
+  `modules/attendance/services.py`.
+- **The right teacher**: the day's teacher after substitutions, or the class
+  teacher for a roll call.
+- **QR that's hard to cheat**: codes expire in about a minute, an optional
+  location radius, one phone per student, and the student comes from the
+  login, never the request.
+- **Offline-safe**: a `client_key` per record makes a resent sync harmless.
+- **Reports**: a student's percentage overall and per subject, the class
+  register, defaulters below 75%, attendance not taken today, and staff
+  attendance.
+
+Details: [`docs/phase-4.md`](docs/phase-4.md).
 
 ---
 
@@ -164,10 +187,16 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 513 tests, in-memory SQLite
+python manage.py test          # 653 tests, in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
+
+`tests/test_tenant_sweep.py` attacks every `/api/v1/` route from one
+organization against another: foreign ids in the URL, in filters and in
+request bodies. New endpoints are covered automatically. When one can't be
+(a new model, or an action with ids in its body), a guard test fails and
+says what to add to `build_tenant()`, `ACTION_ATTACKS` or `NO_RECORD_INPUT`.
 
 ### Running with Docker
 
@@ -271,8 +300,9 @@ Organization  (one school / college)
   `campuses.view` or `users.create`. They are defined in code and loaded with
   `manage.py sync_permissions`.
 - **Role**: a named group of permissions. Built in: `org-admin` (everything),
-  `campus-admin` (manage users, campuses, students, parents, staff and
-  admissions), `staff` (read-only basics), and `student` and `parent`. These
+  `campus-admin` (manage users, campuses, students, parents, staff,
+  admissions and attendance), `staff` (read-only basics, plus taking
+  attendance for their own classes), and `student` and `parent`. These
   last two carry no permissions: students and parents reach their own records
   through `/students/me/` and `/parents/me/`, and more comes with later
   phases. Each organization can also create its own roles.
@@ -548,6 +578,9 @@ no more powerful than the admin).
   to check codes; encrypting it at rest would need a separate key.
 - **File uploads** don't exist yet. Size, type and access checks come with
   the first module that stores documents or photos.
+- **ZKTeco devices have no password.** Their push protocol names a device
+  by serial number only. Set `allowed_ips` on every ZKTeco device; the
+  generic device API uses a proper key instead.
 
 ---
 
@@ -622,6 +655,20 @@ POST   /api/v1/timetable/generate/                                  fill the wee
 GET    /api/v1/lesson-changes/                                      CRUD: one lesson on one date
 POST   /api/v1/bell-schedules/{id}/retime/                          new bell times from a date
 GET    /api/v1/calendar/                                            CRUD: holidays, closures, exams, make-up days
+
+POST   /api/v1/attendance/sessions/                                 open a lesson's or class's attendance (idempotent)
+GET    /api/v1/attendance/sessions/mine/                            a teacher's classes to take today
+GET    /api/v1/attendance/sessions/{id}/roster/                     who is expected, and their marks
+POST   /api/v1/attendance/sessions/{id}/mark/  submit/  reopen/  qr/
+POST   /api/v1/attendance/sessions/scan/                            students scan the class QR
+GET    /api/v1/attendance/records/                                  list; PATCH corrects (reason once submitted)
+GET    /api/v1/attendance/records/me/                               own attendance (students), a child's (parents)
+GET    /api/v1/attendance/reports/student/  register/  defaulters/  missing/  staff/
+GET    /api/v1/attendance/staff-days/  punches/                     staff days (set by hand), raw punches
+POST   /api/v1/attendance/punches/qr/  punches/check-in/            gate QR for staff
+GET    /api/v1/attendance/work-schedules/  staff-schedules/  devices/  biometric-ids/   CRUD
+POST   /api/v1/attendance/device-punches/                           devices: Authorization: Device <key>
+GET    /iclock/cdata  /iclock/getrequest                            ZKTeco push protocol
 
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
@@ -721,7 +768,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1, 2 and 3 are done. The order below is the **dependency order**: each
+Phases 1 to 4 are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -731,7 +778,7 @@ placeholders.
 | ~~2~~ | Students, parents, staff, admissions, enrollment | 1 |
 | ~~3a~~ | Academics: departments, programs, subjects, curriculum, years, terms, batches, sections, rooms, teaching assignments, placement | 2 (teachers, enrollment) |
 | ~~3b~~ | Timetable: periods, weekly schedule, clash detection | 3a |
-| **4** | Attendance: class sessions from the day's lessons, one engine for manual / QR / biometric. Requirements: [`docs/phase-3-real-life.md`](docs/phase-3-real-life.md#️-for-phase-4-attendance) | 3 (dated enrollments, versioned timetable, calendar) |
+| ~~4~~ | Attendance: daily roll calls and lesson attendance, staff check-in, QR, ZKTeco and generic devices, reports | 3 (dated enrollments, versioned timetable, calendar) |
 | 5 | Examinations: exams, marks, grades, results, transcripts | 3 (subjects, syllabus) |
 | 6 | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
 | 7 | Events and student points | 2 |
@@ -743,5 +790,5 @@ placeholders.
 | 14 | Alumni and careers (uses the graduated status) | 2 |
 
 See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
-[`docs/phase-3.md`](docs/phase-3.md) and [`docs/phase-3b.md`](docs/phase-3b.md) for the data model and the conventions
+[`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md) and [`docs/phase-4.md`](docs/phase-4.md) for the data model and the conventions
 every module follows.

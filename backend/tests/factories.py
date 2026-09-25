@@ -236,3 +236,111 @@ def create_timetable_entry(assignment, period, day_of_week=1, **fields):
         organization_id=assignment.organization_id, teaching_assignment=assignment,
         period=period, day_of_week=day_of_week, **fields,
     )
+
+
+# ---------------------------------------------------------------------------
+# Models without a helper above, used by the tenant sweep
+# ---------------------------------------------------------------------------
+def create_department(organization, code="science", name="Science", **fields):
+    from modules.academics.models import Department
+
+    return Department.objects.create(organization=organization, code=code, name=name, **fields)
+
+
+def create_batch(campus, program, start_year, code="batch-2082", name="Batch 2082", **fields):
+    from modules.academics.models import Batch
+
+    return Batch.objects.create(
+        organization_id=campus.organization_id, campus=campus, program=program,
+        start_year=start_year, code=code, name=name, **fields,
+    )
+
+
+def create_student_elective(enrollment, subject, **fields):
+    from modules.academics.models import StudentElective
+
+    fields.setdefault("started_on", enrollment.started_on)
+    return StudentElective.objects.create(
+        organization_id=enrollment.organization_id, enrollment=enrollment, subject=subject, **fields
+    )
+
+
+def create_calendar_event(organization, title="Sports day", day=None, **fields):
+    """By default a one-day event that doesn't stop classes."""
+    from datetime import date
+
+    from modules.academics.models import CalendarEvent
+
+    day = day or date.today()
+    fields.setdefault("kind", "event")
+    fields.setdefault("suspends_classes", False)
+    return CalendarEvent.objects.create(
+        organization=organization, title=title, start_date=day, end_date=day, **fields
+    )
+
+
+def create_lesson_change(entry, day, **fields):
+    """By default the lesson is cancelled that day."""
+    from modules.timetable.models import LessonChange
+
+    if not fields.get("substitute_teacher") and not fields.get("room"):
+        fields.setdefault("is_cancelled", True)
+    return LessonChange.objects.create(
+        organization_id=entry.organization_id, entry=entry, date=day, **fields
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — attendance
+# ---------------------------------------------------------------------------
+def create_attendance_session(section, day=None, entry=None, **fields):
+    """Straight into the table, skipping the service's checks (mode, school
+    day, permissions). Use the API or ``open_session`` to test those."""
+    from datetime import date
+
+    from modules.attendance.models import AttendanceSession
+
+    kind = "lesson" if entry is not None else "daily"
+    return AttendanceSession.objects.create(
+        organization_id=section.organization_id, campus_id=section.campus_id, section=section,
+        date=day or date.today(), kind=kind, timetable_entry=entry, **fields,
+    )
+
+
+def create_attendance_record(session, enrollment, status="present", **fields):
+    from modules.attendance.models import AttendanceRecord
+
+    return AttendanceRecord.objects.create(
+        organization_id=session.organization_id, session=session, enrollment=enrollment,
+        status=status, **fields,
+    )
+
+
+def create_work_schedule(campus, name="Office hours", start="10:00", end="17:00", **fields):
+    from datetime import time
+
+    from modules.attendance.models import WorkSchedule
+
+    fields.setdefault("weekdays", [7, 1, 2, 3, 4, 5])
+    return WorkSchedule.objects.create(
+        organization_id=campus.organization_id, campus=campus, name=name,
+        start_time=time.fromisoformat(start), end_time=time.fromisoformat(end), **fields,
+    )
+
+
+def create_device(campus, serial_number="SN-001", kind="zkteco", name="Gate reader", **fields):
+    from modules.attendance.models import AttendanceDevice
+
+    return AttendanceDevice.objects.create(
+        organization_id=campus.organization_id, campus=campus, serial_number=serial_number,
+        kind=kind, name=name, **fields,
+    )
+
+
+def map_pin(pin, staff=None, student=None):
+    from modules.attendance.models import BiometricIdentity
+
+    person = staff or student
+    return BiometricIdentity.objects.create(
+        organization_id=person.organization_id, pin=pin, staff=staff, student=student
+    )

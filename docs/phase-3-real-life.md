@@ -2,8 +2,8 @@
 
 Real situations in schools, +2 colleges and universities, what the system
 does in each one, and the test that proves it. Everything marked ✅ is
-built and tested. Everything marked ➡️ is attendance work. Phase 3 prepares
-for it, and Phase 4 must build it.
+built and tested, including the attendance situations Phase 3 prepared for
+and Phase 4 built.
 
 The rule behind most of this: **don't depend on current state alone.**
 Enrollments, elective choices, lessons, bell times and teaching assignments
@@ -76,26 +76,26 @@ Test files are under `backend/modules/`.
 
 ---
 
-## ➡️ For Phase 4 (attendance)
+## ✅ Phase 4 (attendance): built
 
-These situations are about recording attendance, not about Phase 3's data.
-Phase 3 already provides what each needs. Phase 4 must build the rest.
+Phase 3 recorded what attendance would need. Phase 4 built every item. Details:
+[`phase-4.md`](phase-4.md). Tests are in `backend/modules/attendance/tests/`.
 
-| Situation | Phase 4 must | Phase 3 provides |
+| Situation | What Phase 4 does | Test |
 |---|---|---|
-| History stays with the enrollment that existed when attendance was taken. | Store `enrollment` on each attendance record, not just the student. | Dated enrollments and `Enrollment.objects.on(date)` |
-| A teacher leaves; B replaces A. | Store `marked_by`: who actually took attendance. Never derive it from today's teacher. | Hand-over versions the lessons, so the lesson on a past date still names A |
-| A substitute marks attendance. | Let the day's actual teacher mark, whether regular or substitute. | `lessons_on(date)` gives the teacher for that day, after changes |
-| Build **class sessions** ("Database, BCA A, 10:00, Monday 3 Kartik"). | Create a session from each lesson of `lessons_on(date)`, skipping cancelled and holiday lessons. Attendance hangs off the session. | Versioned entries, lesson changes, and the calendar all resolved in `lessons_on` |
-| Marking attendance twice (a double click, or a retry). | A database constraint: UNIQUE(enrollment, class_session). | — |
-| Corrections after submitting (Present, then Absent). | Keep an audit trail: old status, new status, who, when, why. Never overwrite silently. | The audit log conventions |
-| A student marks another student present (QR). | Work out the student from the logged-in account: user → student → enrollment on that date. Never trust a `student_id` sent by the app. | `student_for_user`, `get_current_enrollment(student, on=date)` |
-| A QR screenshot gets shared. | Short-lived QR tokens tied to one session, with optional location or device checks. 403 once expired. | — |
-| The same QR is scanned twice. | "Already marked", backed by the unique constraint above. | — |
-| Offline marking, then sync. | A client-generated idempotency key per record, plus `recorded_at` and `synced_at`. | — |
-| Only students taking the subject are expected. | Expected students = `students_taking(section, subject, on=date)`. | Dated electives |
-| Statuses beyond present/absent. | A status enum: present, absent, late, excused, leave, medical leave, on duty. Not a boolean. | — |
-| QR and biometric input. | Build them as input methods that call one attendance service. | — |
+| ✅ History stays with the enrollment that existed when attendance was taken. | Each record stores its `enrollment`. After a move, the record still names the old class. | `test_marking.py` (HistoryTests) |
+| ✅ A teacher leaves; B replaces A. | `marked_by` is who actually marked, and the session keeps the day's teacher. Neither is recomputed. | same |
+| ✅ A substitute marks attendance. | The session's teacher is the teacher for that day from `lessons_on`, after substitutions. Only they (or the office) can take it. | `test_sessions.py` |
+| ✅ Class sessions ("Database, BCA A, 10:00, Monday"). | Built from the day's lessons. Cancelled lessons, holidays and closures are refused with the reason. `sessions/mine/` lists a teacher's classes for the day. | `test_sessions.py` |
+| ✅ Marking attendance twice. | UNIQUE(session, enrollment) in the database, plus upsert. Opening a session twice returns the same one. | `test_marking.py`, `test_sessions.py` |
+| ✅ Corrections after submitting. | Reason required. `AttendanceCorrection` keeps old status, new status, who and when, and the audit log gets an entry. | `test_marking.py` (CorrectionTests) |
+| ✅ A student marks another student present (QR). | The student comes from the login: user → student → enrollment on that date. A `student` or `enrollment` in the request is ignored. | `test_qr.py` |
+| ✅ A QR screenshot gets shared. | Signed codes expire in 15–300 s. Optional location radius, and one phone can't mark two students. | `test_qr.py` |
+| ✅ The same QR is scanned twice. | `200 already_marked`. | `test_qr.py` |
+| ✅ Offline marking, then sync. | A `client_key` per record makes a resent sync a no-op. `recorded_at` is the client's time; `created_at` / `updated_at` is when the server got it. | `test_marking.py` |
+| ✅ Only students taking the subject are expected. | Expected = `students_taking(section, subject, on=date)`, among the class's enrollments that day. | `test_marking.py`, `test_qr.py` |
+| ✅ Statuses beyond present/absent. | present, absent, late, excused, leave, medical leave, on duty. Excused kinds are left out of percentages. | `test_marking.py`, `test_reports.py` |
+| ✅ QR and biometric input. | Every input — teacher, office, QR, ZKTeco, the generic device API — goes through `modules/attendance/services.py`. | `test_qr.py`, `test_devices.py` |
 
 ---
 

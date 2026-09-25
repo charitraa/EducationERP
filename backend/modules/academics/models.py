@@ -54,6 +54,10 @@ class Program(OrganizationOwnedModel):
         YEAR = "year", "Year"
         TRIMESTER = "trimester", "Trimester"
 
+    class AttendanceMode(models.TextChoices):
+        DAILY = "daily", "Once a day, by the class teacher"
+        LESSON = "lesson", "In every lesson, by its teacher"
+
     code = models.SlugField(max_length=50)
     name = models.CharField(max_length=200)
     department = models.ForeignKey(
@@ -63,6 +67,10 @@ class Program(OrganizationOwnedModel):
     first_level = models.PositiveSmallIntegerField(default=1)
     last_level = models.PositiveSmallIntegerField(default=1)
     description = models.TextField(blank=True)
+    attendance_mode = models.CharField(
+        max_length=10, choices=AttendanceMode.choices, default=AttendanceMode.DAILY,
+        help_text="Schools usually take one roll call a day; colleges take it every lesson.",
+    )
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:

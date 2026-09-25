@@ -69,6 +69,8 @@ MODULE_APPS: list[str] = [
     # Phase 3 — academics and the timetable
     "modules.academics",
     "modules.timetable",
+    # Phase 4 — attendance
+    "modules.attendance",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -212,6 +214,8 @@ REST_FRAMEWORK = {
         "login": config("THROTTLE_LOGIN", default="10/min"),
         "anon": config("THROTTLE_ANON", default="60/min"),
         "user": config("THROTTLE_USER", default="600/min"),
+        # Attendance devices sending punches (generic device API).
+        "device": config("THROTTLE_DEVICE", default="120/min"),
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -259,6 +263,9 @@ SPECTACULAR_SETTINGS = {
         "AdmissionStatusEnum": "modules.admissions.models.Admission.Status",
         "RelationshipEnum": "modules.parents.models.StudentParent.Relationship",
         "WeekdayEnum": "modules.timetable.models.Weekday",
+        "AttendanceStatusEnum": "modules.attendance.models.AttendanceStatus",
+        "AttendanceSessionStatusEnum": "modules.attendance.models.AttendanceSession.Status",
+        "StaffDayStatusEnum": "modules.attendance.models.StaffAttendanceDay.Status",
     },
 }
 

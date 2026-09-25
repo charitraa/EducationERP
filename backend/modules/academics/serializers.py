@@ -85,7 +85,8 @@ class ProgramSerializer(TenantSerializer):
     class Meta:
         model = Program
         fields = ["id", "organization", "code", "name", "department", "department_name",
-                  "level_type", "first_level", "last_level", "description", "is_active",
+                  "level_type", "first_level", "last_level", "description", "attendance_mode",
+                  "is_active",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "organization", "created_at", "updated_at"]
 

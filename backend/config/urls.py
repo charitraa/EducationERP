@@ -36,6 +36,8 @@ urlpatterns = [
     ),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema", **_docs), name="redoc"),
     # Probes
+    # ZKTeco attendance devices push to these fixed paths (no /api/ prefix).
+    path("iclock/", include("integrations.biometric.urls")),
     path("health/", health, name="health"),
     path("ready/", ready, name="ready"),
 ]

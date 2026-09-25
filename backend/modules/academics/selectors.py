@@ -41,3 +41,45 @@ def electives_share_students(section, subject_a, subject_b, on=None) -> bool:
 
 def chosen_elective_ids(enrollment, on=None) -> set[int]:
     return set(StudentElective.objects.on(on).filter(enrollment=enrollment).values_list("subject_id", flat=True))
+
+
+def closure_on(section, day):
+    """The calendar event that stops ``section``'s classes on ``day``, if any:
+    a holiday, a closure, or an exam day for its grade."""
+    from .models import CalendarEvent
+
+    events = CalendarEvent.objects.filter(
+        organization_id=section.organization_id, start_date__lte=day, end_date__gte=day,
+        suspends_classes=True,
+    )
+    return next((e for e in events if e.applies_to(section)), None)
+
+
+def campus_closed_on(campus, day):
+    """The event closing a whole campus on ``day`` (every program), if any.
+    Staff aren't expected on these days."""
+    from .models import CalendarEvent
+
+    return CalendarEvent.objects.filter(
+        organization_id=campus.organization_id, start_date__lte=day, end_date__gte=day,
+        suspends_classes=True, program__isnull=True,
+    ).filter(Q(campus__isnull=True) | Q(campus=campus)).first()
+
+
+def closed_days(campus, start, end) -> set:
+    """Every day in [start, end] on which ``campus`` is closed."""
+    from datetime import timedelta
+
+    from .models import CalendarEvent
+
+    days = set()
+    events = CalendarEvent.objects.filter(
+        organization_id=campus.organization_id, start_date__lte=end, end_date__gte=start,
+        suspends_classes=True, program__isnull=True,
+    ).filter(Q(campus__isnull=True) | Q(campus=campus))
+    for event in events:
+        day = max(event.start_date, start)
+        while day <= min(event.end_date, end):
+            days.add(day)
+            day += timedelta(days=1)
+    return days
