@@ -4,12 +4,16 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 4 complete.** Identity (Phase 1), the student foundation
+**Status: Phase 7 complete.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
 academic years, sections, teaching assignments, student placement), the
-weekly timetable with clash detection (Phase 3b) and attendance (Phase 4:
-students, staff, QR and biometric devices) are built and tested. Next is
-Phase 5, examinations — see [Roadmap](#roadmap).
+weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
+students, staff, QR and biometric devices), examinations (Phase 5: exams,
+grading, marks, results, report cards, transcripts), finance (Phase 6:
+fee structures, invoices, scholarships, payments, refunds) and events
+(Phase 7: registration, attendance, participation, points, achievements,
+badges, titles) are built and tested. Next is Phase 8, communication — see
+[Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -114,6 +118,82 @@ Every real-life situation checked:
   attendance.
 
 Details: [`docs/phase-4.md`](docs/phase-4.md).
+
+---
+
+## What Phase 5 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Grading | `GradeScale`, `GradeBand`, `DivisionBand` | Percentage → letter, grade point and pass/fail, per program or organization-wide; a preset table to start from |
+| Exams | `Exam`, `ExamType`, `ExamSubject`, `ExamComponent` | Draft → scheduled → published; papers with theory/practical/internal components, checked against the calendar and each other for clashes |
+| Seating | `ExamRoom`, `SeatAllocation`, `Invigilation` | A seat plan across rooms (interleaved or by class), and invigilator duty with no double-booking |
+| Admit cards | `AdmitCard` | One per candidate; withheld automatically below an attendance minimum, or by hand |
+| Marks | `MarkSheet`, `Mark`, `MarkCorrection` | Teacher enters → submits → office verifies; a change afterwards needs a reason and is kept as a correction |
+| Results | `Result`, `SubjectResult`, `ResultPlan` | Computed and stored per student; ranked within class and level; a term result combines several exams by weight |
+
+- **One grading engine, no database.** `modules/examinations/grading.py` is
+  pure functions — percentages, bands, GPA, pass/fail — so the rules are
+  tested on their own and a recomputation always gives the same answer.
+- **The same shape as attendance.** A mark sheet opens idempotently, is taken
+  by the subject's own teacher, and locks at submission; a correction after
+  that needs a reason and is kept, exactly like `AttendanceCorrection`.
+- **Report cards and transcripts as data.** Everything to print — subjects,
+  grades, GPA, rank, attendance — comes back as JSON; turning it into a PDF
+  is a client's job, not the API's.
+- **Nothing is silently partial.** A subject with an unmarked component, or
+  an exam with an unverified sheet, is `incomplete` — it never gets a grade
+  by accident.
+
+Details: [`docs/phase-5.md`](docs/phase-5.md).
+
+---
+
+## What Phase 6 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Fee structure | `FeeCategory`, `FeeStructure`, `FeeStructureItem` | What a program's level costs, per academic year; one-time (admission) or per-term (tuition) items |
+| Scholarships | `Scholarship`, `StudentScholarship` | A standing %-or-flat reduction granted to a student, applied automatically whenever they're billed |
+| Invoices | `Invoice`, `InvoiceItem`, `Installment` | Generated per term (idempotent) or one-time; ad-hoc discounts, fines and adjustments; an optional due-dated schedule |
+| Payments | `Payment`, `Receipt`, `Refund` | Recorded against an invoice, numbered receipts; a refund reverses a payment without editing it |
+
+- **One fee policy for the whole organization**, split by program, level and
+  year — the same shape as Phase 3a's curriculum and Phase 5's grade scales.
+- **Generated, not typed in by hand.** `generate-invoices` bills every
+  student currently placed in a matching class for a term; running it again
+  only bills whoever is new, the same idempotent pattern as admit cards.
+- **Money that's moved is history.** A refund is a new row, never an edit to
+  the payment it reverses — the same rule the audit log and exam
+  corrections already follow.
+- **Late fees are an explicit action**, not a background job: run it when
+  you decide to, and it never fines the same invoice twice.
+
+Details: [`docs/phase-6.md`](docs/phase-6.md).
+
+---
+
+## What Phase 7 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Events | `EventCategory`, `Event` | Draft → published → cancelled; one campus or every campus; registration open, by approval, or none |
+| Registration | `EventRegistration` | Confirmed straight away, or decided by the organizer; an optional capacity closes it once full |
+| Attendance, participation | `EventAttendance`, `EventParticipation` | Its own simple check-in (never Phase 4's tables); a student's role and, for a competition, where they placed |
+| Points | `PointRule`, `PointEntry`, `StudentPoints` | Configurable rules award points automatically; a running total kept in step, like an invoice's paid amount |
+| Awards | `Award`, `AwardRule`, `StudentAward` | Achievements, badges and titles — one model, `kind` tells them apart — granted automatically by rule or by hand |
+
+- **Never reaches into Attendance's tables.** `EventAttendance` is its own
+  model — claude.md calls that cross-module pattern out by name as one to
+  avoid.
+- **The organizer runs their own event**, the office runs any of them — the
+  same shape as a subject teacher marking their own class's exam (Phase 5).
+- **Rules, not a cron job.** A point rule fires, and an award rule is
+  checked, the moment the action behind it happens — never on a schedule.
+- **A ledger, not a computed sum.** Points are open-ended: nothing here
+  assumes events are their only source.
+
+Details: [`docs/phase-7.md`](docs/phase-7.md).
 
 ---
 
@@ -670,6 +750,44 @@ GET    /api/v1/attendance/work-schedules/  staff-schedules/  devices/  biometric
 POST   /api/v1/attendance/device-punches/                           devices: Authorization: Device <key>
 GET    /iclock/cdata  /iclock/getrequest                            ZKTeco push protocol
 
+GET    /api/v1/grades/scales/                                       CRUD; GET {id}/grade/?percentage=
+GET    /api/v1/exam-types/  exam-subjects/  exam-rooms/              CRUD (campus-scoped)
+GET    /api/v1/exams/                                                CRUD (draft only deletable)
+POST   /api/v1/exams/{id}/add-curriculum/  schedule/  unschedule/    build and lock the exam's papers
+GET    /api/v1/exams/{id}/readiness/  summary/                       what blocks publishing; class results
+POST   /api/v1/exams/{id}/compute/  publish/  unpublish/             results, unpublished / published
+POST   /api/v1/exams/{id}/seat-plan/  generate-admit-cards/          interleave/sequential; withheld below attendance
+GET    /api/v1/exams/me/                                             a student's/parent's own exams
+GET    /api/v1/seat-allocations/  invigilations/  admit-cards/       CRUD (campus-scoped); admit-cards/{id}/data/
+GET    /api/v1/mark-sheets/                                          list/retrieve; POST opens one (idempotent)
+GET    /api/v1/mark-sheets/mine/  {id}/roster/
+POST   /api/v1/mark-sheets/{id}/marks/  submit/  verify/  send-back/
+GET    /api/v1/marks/                                                 list/retrieve; PATCH corrects (reason once locked)
+GET    /api/v1/results/                                                list/retrieve; {id}/report-card/; POST {id}/remark/
+GET    /api/v1/results/me/  report-cards/  report-cards/me/  transcripts/{student_id}/  transcripts/me/
+GET    /api/v1/term-results/                                          CRUD; POST compute/  publish/  unpublish/
+
+GET    /api/v1/fee-categories/  fee-structures/                       CRUD (items locked once invoiced)
+POST   /api/v1/fee-structures/{id}/generate-invoices/  generate-one-time-invoice/
+GET    /api/v1/scholarships/  student-scholarships/                   CRUD; POST student-scholarships/{id}/end/
+GET    /api/v1/invoices/                                              list/retrieve only (generated, not created)
+POST   /api/v1/invoices/{id}/add-item/  cancel/  installments/
+GET    /api/v1/invoices/me/  invoices/reports/student/  outstanding/  collection/
+POST   /api/v1/invoices/assess-late-fees/
+GET    /api/v1/payments/  receipts/  refunds/                         list/retrieve; POST payments/ records one
+POST   /api/v1/payments/{id}/refund/
+
+GET    /api/v1/event-categories/  events/                              CRUD (org-wide event needs an org-wide role)
+POST   /api/v1/events/{id}/publish/  cancel/  register/
+GET    /api/v1/events/{id}/registrations/  attendance/  participation/  roster/
+POST   /api/v1/events/{id}/mark-attendance/  record-participation/
+GET    /api/v1/events/me/
+GET    /api/v1/event-registrations/                                   list/retrieve only (made via register/)
+POST   /api/v1/event-registrations/{id}/decide/  withdraw/
+GET    /api/v1/point-rules/  point-entries/                            CRUD; POST point-entries/ awards by hand
+GET    /api/v1/student-points/  student-points/leaderboard/  student-points/me/
+GET    /api/v1/awards/  award-rules/  student-awards/                  CRUD; POST student-awards/{id}/end/
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -779,9 +897,9 @@ placeholders.
 | ~~3a~~ | Academics: departments, programs, subjects, curriculum, years, terms, batches, sections, rooms, teaching assignments, placement | 2 (teachers, enrollment) |
 | ~~3b~~ | Timetable: periods, weekly schedule, clash detection | 3a |
 | ~~4~~ | Attendance: daily roll calls and lesson attendance, staff check-in, QR, ZKTeco and generic devices, reports | 3 (dated enrollments, versioned timetable, calendar) |
-| 5 | Examinations: exams, marks, grades, results, transcripts | 3 (subjects, syllabus) |
-| 6 | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
-| 7 | Events and student points | 2 |
+| ~~5~~ | Examinations: exams, marks, grades, results, report cards, transcripts | 3 (subjects, syllabus) |
+| ~~6~~ | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
+| ~~7~~ | Events and student points | 2 |
 | 8 | Communication: notices, notifications, support tickets | 2 |
 | 9–10 | Library, inventory | 2 |
 | 11 | HR and payroll (extends `StaffMember`) | 2 |
@@ -790,5 +908,7 @@ placeholders.
 | 14 | Alumni and careers (uses the graduated status) | 2 |
 
 See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
-[`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md) and [`docs/phase-4.md`](docs/phase-4.md) for the data model and the conventions
+[`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),
+[`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md) and
+[`docs/phase-6.md`](docs/phase-6.md) and [`docs/phase-7.md`](docs/phase-7.md) for the data model and the conventions
 every module follows.
