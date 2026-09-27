@@ -1,7 +1,7 @@
 """Who can see and do what: roles, campuses, organizations."""
 from tests.factories import create_campus, create_organization, user_with_system_role
 
-from ..models import Award, PointRule
+from ..models import Award
 from .base import API, EventTestCase
 
 STAFF_ENDPOINTS = ["event-categories", "events", "event-registrations", "point-rules", "point-entries",
@@ -55,8 +55,6 @@ class TenantTests(EventTestCase):
 
     def test_cannot_use_our_ids(self):
         self.login(self.rival)
-        from tests.factories import create_campus as create_campus_
-
         rival_campus = self.rival_org.campuses.first()
         body = {"campus": rival_campus.pk, "category": self.category.pk, "name": "Steal",
                 "start_at": "2027-01-01T10:00:00Z", "end_at": "2027-01-01T12:00:00Z"}

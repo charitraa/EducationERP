@@ -1,5 +1,5 @@
 """Registering, approving, capacity, and withdrawing."""
-from ..models import EventRegistration, RegistrationMode
+from ..models import RegistrationMode
 from .base import API, EventTestCase
 
 EVENTS = f"{API}/events/"

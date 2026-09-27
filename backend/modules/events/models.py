@@ -24,8 +24,6 @@ An **Award** (an achievement, a badge, or a title — ``kind`` tells them
 apart) is either granted by hand or automatically by an **AwardRule**,
 checked the moment the points or counts it depends on change.
 """
-from decimal import Decimal
-
 from django.conf import settings
 from django.db import models
 from django.db.models import F, Q

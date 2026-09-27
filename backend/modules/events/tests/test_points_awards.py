@@ -3,7 +3,6 @@ from ..models import (
     Award,
     AwardRule,
     EventCategory,
-    ParticipationRole,
     PointRule,
     StudentAward,
     StudentPoints,

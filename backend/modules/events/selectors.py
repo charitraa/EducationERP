@@ -1,5 +1,5 @@
 """Read-side: rosters, leaderboards, and a student's own summary."""
-from .models import EventAttendance, EventParticipation, EventRegistration, RegistrationStatus, StudentAward
+from .models import EventAttendance, EventParticipation, RegistrationStatus, StudentAward
 
 
 def event_roster(event) -> list[dict]:

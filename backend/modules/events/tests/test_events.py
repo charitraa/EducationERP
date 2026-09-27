@@ -1,9 +1,7 @@
 """Categories, events, and their draft → published → cancelled lifecycle."""
 from datetime import timedelta
 
-from django.utils import timezone
-
-from ..models import Event, EventStatus
+from ..models import EventStatus
 from .base import API, EventTestCase, NOW
 
 CATEGORIES = f"{API}/event-categories/"
