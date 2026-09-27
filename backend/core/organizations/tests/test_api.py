@@ -8,6 +8,8 @@ from tests.base import APITestCaseBase
 from tests.factories import (
     create_campus,
     create_organization,
+    create_staff_member,
+    create_student,
     create_superuser,
     user_with_system_role,
 )
@@ -166,6 +168,60 @@ class CampusScopedRoleTests(APITestCaseBase):
         response = self.client.post(CAMPUSES_URL, {"name": "Kirtipur", "code": "kirtipur"})
 
         self.assertEqual(response.status_code, 403)
+
+
+class CampusDeletionTests(APITestCaseBase):
+    """Soft delete skips the database's PROTECT, so the API applies it."""
+
+    def setUp(self):
+        self.org = create_organization(code="kmc")
+        self.lalitpur = create_campus(self.org, code="lalitpur", name="Lalitpur")
+        self.principal = user_with_system_role(self.org, "org-admin", email="principal@kmc.test")
+        self.authenticate(self.principal)
+
+    def test_an_empty_campus_can_be_deleted(self):
+        response = self.client.delete(f"{CAMPUSES_URL}{self.lalitpur.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Campus.objects.filter(pk=self.lalitpur.pk).exists())
+
+    def test_a_campus_with_students_and_staff_is_refused(self):
+        create_student(self.lalitpur, student_number="S-1")
+        create_staff_member(self.lalitpur, employee_number="E-1")
+
+        response = self.client.delete(f"{CAMPUSES_URL}{self.lalitpur.pk}/")
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data["error"]["code"], "campus_in_use")
+        self.assertEqual(response.data["error"]["details"]["students"], 1)
+        self.assertEqual(response.data["error"]["details"]["staff members"], 1)
+        self.assertTrue(Campus.objects.filter(pk=self.lalitpur.pk).exists())
+
+    def test_soft_deleted_records_no_longer_block_it(self):
+        staff = create_staff_member(self.lalitpur, employee_number="E-1")
+        self.assertEqual(self.client.delete(f"{CAMPUSES_URL}{self.lalitpur.pk}/").status_code, 409)
+
+        staff.delete()
+        response = self.client.delete(f"{CAMPUSES_URL}{self.lalitpur.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+
+    def test_enrollment_history_keeps_a_campus_protected(self):
+        student = create_student(self.lalitpur, student_number="S-1")
+        student.delete()
+
+        response = self.client.delete(f"{CAMPUSES_URL}{self.lalitpur.pk}/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("enrollments", response.data["error"]["details"])
+
+    def test_another_campuss_people_do_not_block_it(self):
+        bhaktapur = create_campus(self.org, code="bhaktapur", name="Bhaktapur")
+        create_student(bhaktapur, student_number="S-1")
+
+        response = self.client.delete(f"{CAMPUSES_URL}{self.lalitpur.pk}/")
+
+        self.assertEqual(response.status_code, 204)
 
 
 class BootstrapOrganizationTests(APITestCaseBase):

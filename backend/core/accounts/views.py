@@ -15,7 +15,13 @@ from .serializers import (
     UserCreateSerializer,
     UserSerializer,
 )
-from .services import assign_role, change_password, ensure_can_manage_user, revoke_role
+from .services import (
+    assign_role,
+    change_password,
+    ensure_can_manage_user,
+    ensure_not_self,
+    revoke_role,
+)
 
 
 @extend_schema_view(
@@ -72,6 +78,8 @@ class UserViewSet(OrganizationScopedViewSet):
         user = super().get_object()
         if self.action in self.managing_actions:
             ensure_can_manage_user(self.request.user, user)
+        if self.action == "destroy":
+            ensure_not_self(self.request.user, user, "delete")
         return user
 
     def get_serializer_class(self):

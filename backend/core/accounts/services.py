@@ -74,6 +74,15 @@ def ensure_can_manage_user(actor: User | None, target: User) -> None:
         )
 
 
+def ensure_not_self(actor: User | None, target: User, what: str = "deactivate") -> None:
+    """Nobody may deactivate or delete their own account: a sole administrator
+    would lock their organization out of it, and only someone else can undo it."""
+    if actor is not None and actor.pk == target.pk:
+        raise ServiceError(
+            f"You cannot {what} your own account.", code=f"cannot_{what}_self"
+        )
+
+
 @transaction.atomic
 def create_user(
     *,
@@ -183,6 +192,7 @@ def change_password(*, user: User, new_password: str, changed_by: User | None = 
 @transaction.atomic
 def deactivate_user(*, user: User, deactivated_by: User | None = None) -> User:
     """Preferred over deletion: keeps history intact and blocks sign-in."""
+    ensure_not_self(deactivated_by, user)
     user.is_active = False
     user.save(update_fields=["is_active", "updated_at"])
     log(

@@ -10,6 +10,7 @@ from .serializers import (
     OrganizationSerializer,
     OrganizationWriteSerializer,
 )
+from .services import ensure_campus_deletable
 
 
 @extend_schema_view(
@@ -103,6 +104,10 @@ class CampusViewSet(CampusScopedViewSet):
         "partial_update": ["campuses.update"],
         "destroy": ["campuses.delete"],
     }
+
+    def perform_destroy(self, instance):
+        ensure_campus_deletable(instance)
+        super().perform_destroy(instance)
 
     def perform_create(self, serializer):
         # A new campus is outside every campus scope, so only an

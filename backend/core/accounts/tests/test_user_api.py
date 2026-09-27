@@ -127,6 +127,40 @@ class UserCRUDTests(APITestCaseBase):
         user.refresh_from_db()
         self.assertFalse(user.is_active)
 
+    def test_cannot_deactivate_your_own_account(self):
+        response = self.client.post(f"{USERS_URL}{self.admin.pk}/deactivate/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error"]["code"], "cannot_deactivate_self")
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+    def test_cannot_delete_your_own_account(self):
+        response = self.client.delete(f"{USERS_URL}{self.admin.pk}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error"]["code"], "cannot_delete_self")
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+    def test_cannot_deactivate_yourself_by_editing_is_active(self):
+        for method in (self.client.patch, self.client.put):
+            body = {"is_active": False}
+            if method == self.client.put:
+                body["email"] = self.admin.email
+            response = method(f"{USERS_URL}{self.admin.pk}/", body)
+
+            self.assertEqual(response.status_code, 400, response.data)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+    def test_can_still_edit_your_own_profile_and_deactivate_others(self):
+        response = self.client.patch(f"{USERS_URL}{self.admin.pk}/", {"phone": "9800000000"})
+        self.assertEqual(response.status_code, 200, response.data)
+
+        other = create_user(self.org, email="other@test.edu")
+        response = self.client.patch(f"{USERS_URL}{other.pk}/", {"is_active": False})
+        self.assertEqual(response.status_code, 200, response.data)
+
     def test_soft_deleted_user_cannot_authenticate(self):
         user = create_user(self.org, email="ghost@test.edu")
         user.delete()

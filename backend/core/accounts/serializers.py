@@ -42,6 +42,17 @@ class UserSerializer(serializers.ModelSerializer):
             "role_assignments", "created_at", "updated_at",
         ]
 
+    def validate_is_active(self, value):
+        request = self.context.get("request")
+        if (
+            value is False
+            and isinstance(self.instance, User)
+            and request is not None
+            and request.user.pk == self.instance.pk
+        ):
+            raise serializers.ValidationError("You cannot deactivate your own account.")
+        return value
+
 
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
