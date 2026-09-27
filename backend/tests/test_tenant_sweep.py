@@ -35,6 +35,25 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from core.audit.models import AuditLog
 from modules.attendance import qr as attendance_qr
 from modules.attendance.models import AttendanceCorrection, Punch, StaffAttendanceDay, StaffWorkSchedule
+from modules.examinations import services as exam_services
+from modules.examinations.models import (
+    AdmitCard,
+    Exam,
+    ExamComponent,
+    ExamRoom,
+    ExamSubject,
+    ExamType,
+    GradeScale,
+    Invigilation,
+    Mark,
+    MarkCorrection,
+    MarkSheet,
+    Result,
+    ResultPlan,
+    ResultPlanExam,
+    SeatAllocation,
+    SubjectResult,
+)
 from core.organizations.models import Organization
 from core.permissions.models import Permission
 from modules.parents.services import link_student
@@ -103,6 +122,9 @@ QUERY_PARAMS = {
     "room": "room", "schedule": "schedule", "term": "term", "batch": "batch",
     "department": "department", "user": "user", "role": "role",
     "session": "attendance_session", "device": "device", "timetable_entry": "timetable_entry",
+    "exam": "exam", "plan": "result_plan", "exam_subject": "exam_subject", "exam_room": "exam_room",
+    "sheet": "mark_sheet", "component": "exam_component", "grade_scale": "grade_scale",
+    "exam_type": "exam_type", "enrollment": "enrollment", "level": "exam",
 }
 
 
@@ -173,7 +195,43 @@ def build_tenant(tag):
     staff_day = StaffAttendanceDay.objects.create(organization=org, staff=staff,
                                                   date=date.today(), status="present")
 
+    # Phase 5 — examinations
+    scale = GradeScale.objects.create(organization=org, name=f"{tag} Scale")
+    bands, divisions = exam_services.preset_bands("neb-style")
+    exam_services.replace_bands(scale, bands, divisions)
+    exam_type = ExamType.objects.create(organization=org, code=f"{tag}-term", name=f"{tag} Terminal")
+    exam = Exam.objects.create(organization=org, campus=campus, academic_year=year, exam_type=exam_type,
+                               program=program, name=f"{tag} Terminal", grade_scale=scale)
+    paper = ExamSubject.objects.create(organization=org, exam=exam, subject=subject, level=11,
+                                       date=date.today() - timedelta(days=2), start_time="10:00", end_time="12:00")
+    component = ExamComponent.objects.create(organization=org, exam_subject=paper, name=f"{tag} Theory",
+                                             full_marks=100, pass_marks=35)
+    exam_room = ExamRoom.objects.create(organization=org, exam=exam, room=room, capacity=10)
+    seat = SeatAllocation.objects.create(organization=org, exam=exam, enrollment=enrollment,
+                                         exam_room=exam_room, seat_number=1)
+    invigilation = Invigilation.objects.create(organization=org, exam_subject=paper, exam_room=exam_room, staff=staff)
+    admit_card = AdmitCard.objects.create(organization=org, exam=exam, enrollment=enrollment, student=student,
+                                          card_number=f"{tag}-card")
+    sheet = MarkSheet.objects.create(organization=org, exam_subject=paper, section=section)
+    mark = Mark.objects.create(organization=org, sheet=sheet, component=component, enrollment=enrollment,
+                               status="present", marks=50)
+    mark_correction = MarkCorrection.objects.create(
+        organization=org, mark=mark, old_status="present", old_marks=40, new_status="present", new_marks=50,
+        reason=f"{tag} recount")
+    result = Result.objects.create(organization=org, exam=exam, student=student, enrollment=enrollment,
+                                   section=section, total_obtained=50, total_full=100, percentage=50,
+                                   status="pass")
+    SubjectResult.objects.create(result=result, subject=subject, exam_subject=paper, obtained=50, full=100,
+                                 percentage=50, status="pass")
+    plan = ResultPlan.objects.create(organization=org, campus=campus, academic_year=year, program=program,
+                                     name=f"{tag} Term Plan", grade_scale=scale)
+    ResultPlanExam.objects.create(plan=plan, exam=exam, weight=100)
+
     return {
+        "grade_scale": scale, "exam_type": exam_type, "exam": exam, "exam_subject": paper,
+        "exam_component": component, "exam_room": exam_room, "seat_allocation": seat,
+        "invigilation": invigilation, "admit_card": admit_card, "mark_sheet": sheet, "mark": mark,
+        "mark_correction": mark_correction, "result": result, "result_plan": plan,
         "organization": org, "campus": campus, "user": user, "role": role, "staff": staff,
         "department": department, "program": program, "subject": subject, "elective": elective,
         "curriculum": curriculum, "academic_year": year, "term": term, "room": room,
@@ -341,6 +399,26 @@ ACTION_ATTACKS.update({
     ],
 })
 
+ACTION_ATTACKS.update({
+    # Opening a sheet for another organization's paper or class.
+    ("MarkSheetViewSet", "create"): [
+        lambda a, b: (None, {"exam_subject": b["exam_subject"].pk, "section": a["section"].pk}),
+        lambda a, b: (None, {"exam_subject": a["exam_subject"].pk, "section": b["section"].pk}),
+    ],
+    # Marks for another organization's students or components.
+    ("MarkSheetViewSet", "marks"): [
+        lambda a, b: ("mark_sheet", {"entries": [{"enrollment": b["enrollment"].pk,
+                                                  "component": a["exam_component"].pk,
+                                                  "status": "present", "marks": "50"}]}),
+        lambda a, b: ("mark_sheet", {"entries": [{"enrollment": a["enrollment"].pk,
+                                                  "component": b["exam_component"].pk,
+                                                  "status": "present", "marks": "50"}]}),
+    ],
+    ("ExamViewSet", "generate_admit_cards"): [
+        lambda a, b: ("exam", {"section": b["section"].pk}),
+    ],
+})
+
 # Write actions whose body names no other record, so the detail sweep (a
 # foreign pk in the URL) is all there is to attack.
 NO_RECORD_INPUT = {
@@ -357,7 +435,36 @@ NO_RECORD_INPUT = {
     ("AttendanceSessionViewSet", "reopen"),
     ("AttendanceSessionViewSet", "qr"),
     ("AttendanceDeviceViewSet", "rotate_key"),
+    ("ExamViewSet", "add_curriculum"),
+    ("ExamViewSet", "schedule"),
+    ("ExamViewSet", "unschedule"),
+    ("ExamViewSet", "publish"),
+    ("ExamViewSet", "unpublish"),
+    ("ExamViewSet", "compute"),
+    ("ExamViewSet", "seat_plan"),
+    ("ExamViewSet", "clear_seat_plan"),
+    ("AdmitCardViewSet", "withhold"),
+    ("AdmitCardViewSet", "release"),
+    ("MarkSheetViewSet", "submit"),
+    ("MarkSheetViewSet", "verify"),
+    ("MarkSheetViewSet", "send_back"),
+    ("ResultViewSet", "remark"),
+    ("ResultPlanViewSet", "compute"),
+    ("ResultPlanViewSet", "publish"),
+    ("ResultPlanViewSet", "unpublish"),
 }
+
+# Collections that need a query to say what to list, so an empty request is a
+# 400 rather than a page of the caller's own rows. The leak checks still run.
+LIST_NEEDS_INPUT = {"ReportCardViewSet"}
+
+# Writable nested serializers with no record ids inside, so there is nothing
+# to smuggle. Ones that do carry ids are attacked by hand (NESTED_ATTACKS).
+NESTED_WITHOUT_IDS = {
+    ("GradeScaleSerializer", "bands"), ("GradeScaleSerializer", "divisions"),
+    ("ExamSubjectSerializer", "components"),
+}
+NESTED_WITH_IDS = {("ResultPlanSerializer", "items")}
 
 
 # ---------------------------------------------------------------------------
@@ -524,7 +631,8 @@ class ListTests(TenantSweepTestCase):
                 continue
             with self.subTest(route=str(route)):
                 response, problems = self.attack("get", route.url(), query={})
-                if route.actions["get"] == "list" and route.model not in GLOBAL_MODELS:
+                if (route.actions["get"] == "list" and route.model not in GLOBAL_MODELS
+                        and route.view.__name__ not in LIST_NEEDS_INPUT):
                     # Otherwise a 403 or an empty page would pass without testing anything.
                     self.assertEqual(response.status_code, 200, response.content[:300])
                     self.assertIn(ATTACKER_TAG, response.content.decode().lower(),
@@ -548,6 +656,9 @@ def writable_relations(serializer):
     for name, field in serializer.fields.items():
         if field.read_only:
             continue
+        if isinstance(field, serializers.BaseSerializer) or isinstance(getattr(field, "child", None), serializers.BaseSerializer):
+            if (type(serializer).__name__, name) in NESTED_WITHOUT_IDS | NESTED_WITH_IDS:
+                continue
         if isinstance(field, ManyRelatedField):
             yield name, field.child_relation.queryset.model, True
         elif isinstance(field, RelatedField):
@@ -622,3 +733,22 @@ class ForeignIdInBodyTests(TenantSweepTestCase):
                 with self.subTest(action=f"{view_name}.{action}", attack=number):
                     response, problems = self.attack("post", url, body)
                     self.assert_held(f"POST {url} {body}", response, problems, {400, 404})
+
+
+class NestedIdTests(TenantSweepTestCase):
+    """Ids inside a writable nested serializer, which the generic sweep skips."""
+
+    def test_a_term_result_cannot_count_another_organizations_exam(self):
+        a, b = self.a, self.b
+        route = next(r for r in self.routes if r.view.__name__ == "ResultPlanViewSet" and not r.is_detail)
+        own = {"campus": a["campus"].pk, "academic_year": a["academic_year"].pk, "program": a["program"].pk,
+               "name": "Nested attack"}
+        response, problems = self.attack("post", route.url(), {**own, "items": [
+            {"exam": b["exam"].pk, "weight": "100"}]})
+        self.assert_held("POST term-results items=<org B exam>", response, problems, {400})
+        self.assertIn("items", response.data["error"]["details"])
+
+        plan = a["result_plan"]
+        response, problems = self.attack("patch", route.url() + f"{plan.pk}/", {"items": [
+            {"exam": b["exam"].pk, "weight": "100"}]})
+        self.assert_held("PATCH term-results items=<org B exam>", response, problems, {400})

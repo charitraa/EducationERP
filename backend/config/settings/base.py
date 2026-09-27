@@ -71,6 +71,8 @@ MODULE_APPS: list[str] = [
     "modules.timetable",
     # Phase 4 — attendance
     "modules.attendance",
+    # Phase 5 — examinations
+    "modules.examinations",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -266,6 +268,13 @@ SPECTACULAR_SETTINGS = {
         "AttendanceStatusEnum": "modules.attendance.models.AttendanceStatus",
         "AttendanceSessionStatusEnum": "modules.attendance.models.AttendanceSession.Status",
         "StaffDayStatusEnum": "modules.attendance.models.StaffAttendanceDay.Status",
+        "ExamStatusEnum": "modules.examinations.models.Exam.Status",
+        "MarkSheetStatusEnum": "modules.examinations.models.MarkSheet.Status",
+        "TermResultStatusEnum": "modules.examinations.models.ResultPlan.Status",
+        "AdmitCardStatusEnum": "modules.examinations.models.AdmitCard.Status",
+        "MarkStatusEnum": "modules.examinations.models.MarkStatus",
+        "ResultStatusEnum": "modules.examinations.models.ResultStatus",
+        "ExamComponentKindEnum": "modules.examinations.models.ExamComponent.Kind",
     },
 }
 
