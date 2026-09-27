@@ -15,7 +15,6 @@ from tests.factories import (
     create_campus,
     create_organization,
     create_program,
-    create_room,
     create_section,
     create_staff_member,
     create_student,

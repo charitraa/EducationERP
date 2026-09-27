@@ -1,13 +1,11 @@
 """Entering marks: who may, what's checked, and how a sheet moves on."""
-from datetime import timedelta
 from decimal import Decimal
 
 from core.audit.models import AuditLog
 from tests.factories import create_section
 from modules.students.services import place_student
 
-from .. import services
-from ..models import Mark, MarkCorrection, MarkSheet
+from ..models import Mark, MarkCorrection
 from .base import API, TODAY, ExamTestCase
 
 SHEETS = f"{API}/mark-sheets/"
@@ -49,6 +47,10 @@ class OpenSheetTests(MarkSheetTestCase):
 
     def test_the_exam_office_can_open_any_sheet(self):
         self.assertEqual(self.open_sheet(self.office).status_code, 201)
+
+    def test_reopening_an_already_open_sheet_is_still_permission_checked(self):
+        self.open_sheet(self.hari)                    # creates it
+        self.assertError(self.open_sheet(self.sita), 403, "not_your_class")
 
     def test_a_paper_that_hasnt_been_sat_has_no_sheet_yet(self):
         future = self.paper(self.exam, self.biology, days_ago=-5, start="14:00", end="16:00")

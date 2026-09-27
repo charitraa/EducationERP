@@ -2,7 +2,7 @@
 from decimal import Decimal as D
 
 from core.audit.models import AuditLog
-from tests.factories import create_parent, create_student, user_with_system_role, create_user, grant, create_role
+from tests.factories import create_parent, create_student, create_user
 from modules.parents.models import StudentParent
 from modules.students.services import place_student
 

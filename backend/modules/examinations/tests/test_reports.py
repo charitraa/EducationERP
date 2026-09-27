@@ -1,6 +1,5 @@
 """Report cards, transcripts and the exam summary."""
 from datetime import timedelta
-from decimal import Decimal as D
 
 from tests.factories import (
     create_attendance_record,
@@ -11,7 +10,6 @@ from tests.factories import (
 
 from modules.parents.models import StudentParent
 
-from .. import results
 from ..models import Result
 from .base import API, TODAY, ExamTestCase
 
@@ -175,7 +173,6 @@ class TranscriptTests(PublishedExamTestCase):
         self.assertEqual(self.client.get(f"{TRANSCRIPTS}{self.gita.pk}/").status_code, 403)     # staff endpoint
 
     def test_a_term_result_appears_once_published(self):
-        from ..models import ResultPlan
         plan = self.client.post(f"{API}/term-results/", {
             "campus": self.campus.pk, "academic_year": self.year.pk, "program": self.program.pk, "name": "Term 1",
             "items": [{"exam": self.exam.pk, "weight": "100"}]}, format="json")

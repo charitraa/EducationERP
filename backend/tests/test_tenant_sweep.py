@@ -36,6 +36,34 @@ from core.audit.models import AuditLog
 from modules.attendance import qr as attendance_qr
 from modules.attendance.models import AttendanceCorrection, Punch, StaffAttendanceDay, StaffWorkSchedule
 from modules.examinations import services as exam_services
+from modules.events import services as events_services
+from modules.events.models import (
+    Award,
+    AwardRule,
+    Event,
+    EventAttendance,
+    EventCategory,
+    EventParticipation,
+    EventRegistration,
+    PointEntry,
+    PointRule,
+    StudentAward,
+    StudentPoints,
+)
+from modules.finance import services as finance_services
+from modules.finance.models import (
+    FeeCategory,
+    FeeStructure,
+    FeeStructureItem,
+    Installment,
+    Invoice,
+    InvoiceItem,
+    Payment,
+    Receipt,
+    Refund,
+    Scholarship,
+    StudentScholarship,
+)
 from modules.examinations.models import (
     AdmitCard,
     Exam,
@@ -109,6 +137,10 @@ SELF_ONLY_VIEWS = {
     # Signed in as a device, which only ever writes into its own organization;
     # tested in modules/attendance/tests/test_devices.py.
     "DevicePunchView",
+    # Authenticated normally, but every foreign id it could act on (a campus) is checked against
+    # the caller's own organization in the serializer before any query runs — see the tenant test
+    # in modules/finance/tests/test_access.py.
+    "AssessLateFeesView",
 }
 
 CRUD_ACTIONS = {"list", "create", "retrieve", "update", "partial_update", "destroy"}
@@ -125,6 +157,9 @@ QUERY_PARAMS = {
     "exam": "exam", "plan": "result_plan", "exam_subject": "exam_subject", "exam_room": "exam_room",
     "sheet": "mark_sheet", "component": "exam_component", "grade_scale": "grade_scale",
     "exam_type": "exam_type", "enrollment": "enrollment", "level": "exam",
+    "invoice": "invoice", "payment": "payment", "fee_structure": "fee_structure", "scholarship": "scholarship",
+    "category": "event_category", "organized_by": "staff", "event": "event", "rule": "point_rule",
+    "award": "award",
 }
 
 
@@ -201,7 +236,9 @@ def build_tenant(tag):
     exam_services.replace_bands(scale, bands, divisions)
     exam_type = ExamType.objects.create(organization=org, code=f"{tag}-term", name=f"{tag} Terminal")
     exam = Exam.objects.create(organization=org, campus=campus, academic_year=year, exam_type=exam_type,
-                               program=program, name=f"{tag} Terminal", grade_scale=scale)
+                               program=program, name=f"{tag} Terminal", grade_scale=scale,
+                               status=Exam.Status.SCHEDULED, start_date=date.today() - timedelta(days=2),
+                               end_date=date.today() - timedelta(days=2))
     paper = ExamSubject.objects.create(organization=org, exam=exam, subject=subject, level=11,
                                        date=date.today() - timedelta(days=2), start_time="10:00", end_time="12:00")
     component = ExamComponent.objects.create(organization=org, exam_subject=paper, name=f"{tag} Theory",
@@ -227,11 +264,66 @@ def build_tenant(tag):
                                      name=f"{tag} Term Plan", grade_scale=scale)
     ResultPlanExam.objects.create(plan=plan, exam=exam, weight=100)
 
+    # Phase 6 — finance
+    fee_category = FeeCategory.objects.create(organization=org, code=f"{tag}-fee", name=f"{tag} Tuition")
+    fee_structure = FeeStructure.objects.create(organization=org, program=program, level=11, academic_year=year,
+                                                name=f"{tag} Structure")
+    fee_structure_item = FeeStructureItem.objects.create(organization=org, fee_structure=fee_structure,
+                                                         category=fee_category, amount=1000, frequency="per_term")
+    scholarship = Scholarship.objects.create(organization=org, name=f"{tag} Scholarship", kind="flat", value=100)
+    student_scholarship = StudentScholarship.objects.create(organization=org, student=student, scholarship=scholarship,
+                                                             started_on=year.start_date)
+    invoice = Invoice.objects.create(organization=org, campus=campus, student=student, enrollment=enrollment,
+                                     fee_structure=fee_structure, academic_year=year, term=term,
+                                     invoice_number=f"{tag}-INV-1", issue_date=date.today(),
+                                     due_date=date.today() + timedelta(days=15), total=1000)
+    invoice_item = InvoiceItem.objects.create(organization=org, invoice=invoice, category=fee_category, kind="fee",
+                                              description=f"{tag} Tuition", amount=1000)
+    installment = Installment.objects.create(organization=org, invoice=invoice, sequence=1, amount=1000,
+                                             due_date=date.today() + timedelta(days=15))
+    payment = Payment.objects.create(organization=org, campus=campus, invoice=invoice, amount=500, method="cash",
+                                     paid_at=timezone.now())
+    receipt = Receipt.objects.create(organization=org, payment=payment, receipt_number=f"{tag}-RC-1",
+                                     issued_at=timezone.now())
+    refund = Refund.objects.create(organization=org, payment=payment, amount=100, reason=f"{tag} refund",
+                                   refunded_at=timezone.now())
+
+    # Phase 7 — events
+    event_category = EventCategory.objects.create(organization=org, code=f"{tag}-cat", name=f"{tag} Category")
+    my_event = Event.objects.create(organization=org, campus=campus, category=event_category, name=f"{tag} Event",
+                                    start_at=timezone.now() + timedelta(days=7),
+                                    end_at=timezone.now() + timedelta(days=7, hours=2), status="published",
+                                    registration_mode="open", organized_by=staff)
+    event_registration = EventRegistration.objects.create(organization=org, event=my_event, student=student,
+                                                          status="confirmed")
+    event_attendance = EventAttendance.objects.create(organization=org, event=my_event, student=student,
+                                                      status="present")
+    event_participation = EventParticipation.objects.create(organization=org, event=my_event, student=student,
+                                                             role="winner")
+    point_rule = PointRule.objects.create(organization=org, name=f"{tag} rule", category=event_category,
+                                          source="attendance", points=10)
+    point_entry = PointEntry.objects.create(organization=org, student=student, points=10, reason=f"{tag} reason",
+                                            rule=point_rule, event=my_event)
+    student_points = StudentPoints.objects.create(organization=org, student=student, total=10)
+    award = Award.objects.create(organization=org, kind="badge", code=f"{tag}-award", name=f"{tag} Award")
+    award_rule = AwardRule.objects.create(organization=org, award=award, threshold_kind="points_total",
+                                          threshold_value=10, category=event_category)
+    student_award = StudentAward.objects.create(organization=org, student=student, award=award,
+                                                awarded_at=timezone.now())
+
     return {
         "grade_scale": scale, "exam_type": exam_type, "exam": exam, "exam_subject": paper,
         "exam_component": component, "exam_room": exam_room, "seat_allocation": seat,
         "invigilation": invigilation, "admit_card": admit_card, "mark_sheet": sheet, "mark": mark,
         "mark_correction": mark_correction, "result": result, "result_plan": plan,
+        "fee_category": fee_category, "fee_structure": fee_structure, "fee_structure_item": fee_structure_item,
+        "scholarship": scholarship, "student_scholarship": student_scholarship, "invoice": invoice,
+        "invoice_item": invoice_item, "installment": installment, "payment": payment, "receipt": receipt,
+        "refund": refund,
+        "event_category": event_category, "event": my_event, "event_registration": event_registration,
+        "event_attendance": event_attendance, "event_participation": event_participation,
+        "point_rule": point_rule, "point_entry": point_entry, "student_points": student_points,
+        "award": award, "award_rule": award_rule, "student_award": student_award,
         "organization": org, "campus": campus, "user": user, "role": role, "staff": staff,
         "department": department, "program": program, "subject": subject, "elective": elective,
         "curriculum": curriculum, "academic_year": year, "term": term, "room": room,
@@ -400,6 +492,34 @@ ACTION_ATTACKS.update({
 })
 
 ACTION_ATTACKS.update({
+    # A payment against another organization's invoice.
+    ("PaymentViewSet", "create"): [
+        lambda a, b: (None, {"invoice": b["invoice"].pk, "amount": "10", "method": "cash"}),
+    ],
+    ("FeeStructureViewSet", "generate_term_invoices"): [
+        lambda a, b: ("fee_structure", {"term": b["term"].pk}),
+        lambda a, b: ("fee_structure", {"term": a["term"].pk, "section": b["section"].pk}),
+    ],
+    ("FeeStructureViewSet", "generate_one_time_invoice"): [
+        lambda a, b: ("fee_structure", {"student": b["student"].pk}),
+    ],
+    ("InvoiceViewSet", "add_item"): [
+        lambda a, b: ("invoice", {"kind": "fine", "description": "x", "amount": "10",
+                                  "category": b["fee_category"].pk}),
+    ],
+    ("EventViewSet", "mark_attendance"): [
+        lambda a, b: ("event", {"entries": [{"student": b["student"].pk, "status": "present"}]}),
+    ],
+    ("PointEntryViewSet", "create"): [
+        lambda a, b: (None, {"student": b["student"].pk, "points": "10", "reason": "x"}),
+    ],
+    ("StudentAwardViewSet", "create"): [
+        lambda a, b: (None, {"student": b["student"].pk, "award": a["award"].pk}),
+        lambda a, b: (None, {"student": a["student"].pk, "award": b["award"].pk}),
+    ],
+    ("EventViewSet", "record_participation"): [
+        lambda a, b: ("event", {"student": b["student"].pk, "role": "participant"}),
+    ],
     # Opening a sheet for another organization's paper or class.
     ("MarkSheetViewSet", "create"): [
         lambda a, b: (None, {"exam_subject": b["exam_subject"].pk, "section": a["section"].pk}),
@@ -452,6 +572,16 @@ NO_RECORD_INPUT = {
     ("ResultPlanViewSet", "compute"),
     ("ResultPlanViewSet", "publish"),
     ("ResultPlanViewSet", "unpublish"),
+    ("StudentScholarshipViewSet", "end"),
+    ("InvoiceViewSet", "cancel"),
+    ("InvoiceViewSet", "set_installments"),
+    ("PaymentViewSet", "refund"),
+    ("EventViewSet", "publish"),
+    ("EventViewSet", "cancel"),
+    ("EventViewSet", "register"),
+    ("EventRegistrationViewSet", "decide"),
+    ("EventRegistrationViewSet", "withdraw"),
+    ("StudentAwardViewSet", "end"),
 }
 
 # Collections that need a query to say what to list, so an empty request is a
@@ -464,7 +594,7 @@ NESTED_WITHOUT_IDS = {
     ("GradeScaleSerializer", "bands"), ("GradeScaleSerializer", "divisions"),
     ("ExamSubjectSerializer", "components"),
 }
-NESTED_WITH_IDS = {("ResultPlanSerializer", "items")}
+NESTED_WITH_IDS = {("ResultPlanSerializer", "items"), ("FeeStructureSerializer", "items")}
 
 
 # ---------------------------------------------------------------------------
@@ -719,7 +849,14 @@ class ForeignIdInBodyTests(TenantSweepTestCase):
                     context = CREATE_CONTEXT.get((route.view.__name__, name), lambda a: {})
                     body = {**context(self.a), name: [foreign] if many else foreign}
                     response, problems = self.attack("post", route.url(), body)
-                    self.assert_held(f"POST {route} {name}=<org B>", response, problems, {400})
+                    # A view whose create() refuses every POST outright (see AdmitCardViewSet,
+                    # InvoiceViewSet, EventRegistrationViewSet) never validates the body at all: an
+                    # ordinary attacker is blocked by HasPermission first (403, "create" isn't a
+                    # declared permission), and even a superuser reaching create() gets 405 — both
+                    # stricter refusals than a 400 naming the field, so both are held.
+                    self.assert_held(f"POST {route} {name}=<org B>", response, problems, {400, 403, 405})
+                    if response.status_code in (403, 405):
+                        continue
                     details = response.data["error"]["details"] or {}
                     self.assertIn(name, details, f"POST {route}: {name}=<org B> not refused")
 
@@ -752,3 +889,17 @@ class NestedIdTests(TenantSweepTestCase):
         response, problems = self.attack("patch", route.url() + f"{plan.pk}/", {"items": [
             {"exam": b["exam"].pk, "weight": "100"}]})
         self.assert_held("PATCH term-results items=<org B exam>", response, problems, {400})
+
+    def test_a_fee_structure_cannot_use_another_organizations_category(self):
+        a, b = self.a, self.b
+        route = next(r for r in self.routes if r.view.__name__ == "FeeStructureViewSet" and not r.is_detail)
+        own = {"program": a["program"].pk, "level": 11, "academic_year": a["academic_year"].pk, "name": "Nested attack"}
+        response, problems = self.attack("post", route.url(), {**own, "items": [
+            {"category": b["fee_category"].pk, "amount": "10", "frequency": "per_term"}]})
+        self.assert_held("POST fee-structures items=<org B category>", response, problems, {400})
+        self.assertIn("items", response.data["error"]["details"])
+
+        structure = a["fee_structure"]
+        response, problems = self.attack("patch", route.url() + f"{structure.pk}/", {"items": [
+            {"category": b["fee_category"].pk, "amount": "10", "frequency": "per_term"}]})
+        self.assert_held("PATCH fee-structures items=<org B category>", response, problems, {400})

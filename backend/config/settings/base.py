@@ -73,6 +73,10 @@ MODULE_APPS: list[str] = [
     "modules.attendance",
     # Phase 5 — examinations
     "modules.examinations",
+    # Phase 6 — finance
+    "modules.finance",
+    # Phase 7 — events
+    "modules.events",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -275,6 +279,20 @@ SPECTACULAR_SETTINGS = {
         "MarkStatusEnum": "modules.examinations.models.MarkStatus",
         "ResultStatusEnum": "modules.examinations.models.ResultStatus",
         "ExamComponentKindEnum": "modules.examinations.models.ExamComponent.Kind",
+        "InvoiceStatusEnum": "modules.finance.models.InvoiceStatus",
+        "FrequencyEnum": "modules.finance.models.Frequency",
+        "ScholarshipKindEnum": "modules.finance.models.ScholarshipKind",
+        "InvoiceItemKindEnum": "modules.finance.models.InvoiceItemKind",
+        "PaymentMethodEnum": "modules.finance.models.PaymentMethod",
+        "RegistrationModeEnum": "modules.events.models.RegistrationMode",
+        "EventStatusEnum": "modules.events.models.EventStatus",
+        "RegistrationStatusEnum": "modules.events.models.RegistrationStatus",
+        "EventAttendanceStatusEnum": "modules.events.models.AttendanceStatus",
+        "ParticipationRoleEnum": "modules.events.models.ParticipationRole",
+        "AttendanceSourceEnum": "modules.attendance.models.Source",
+        "PointSourceEnum": "modules.events.models.PointSource",
+        "AwardKindEnum": "modules.events.models.AwardKind",
+        "ThresholdKindEnum": "modules.events.models.ThresholdKind",
     },
 }
 

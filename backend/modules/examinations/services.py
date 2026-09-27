@@ -481,7 +481,8 @@ def open_sheet(paper: ExamSubject, section: Section, *, by) -> tuple[MarkSheet, 
     created = sheet is None
     if created:
         sheet = MarkSheet(organization_id=exam.organization_id, exam_subject=paper, section=section)
-        ensure_can_enter(by, sheet)
+    ensure_can_enter(by, sheet)
+    if created:
         sheet.save()
     return sheet, created
 

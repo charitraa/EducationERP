@@ -6,7 +6,6 @@ from tests.factories import create_program, create_student, create_user
 
 from modules.students.services import place_student
 
-from .. import results
 from ..models import Exam, Result, ResultPlan
 from .base import API, TODAY, ExamTestCase
 

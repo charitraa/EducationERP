@@ -24,4 +24,8 @@ urlpatterns = [
     path("", include("modules.attendance.urls")),
     # Phase 5
     path("", include("modules.examinations.urls")),
+    # Phase 6
+    path("", include("modules.finance.urls")),
+    # Phase 7
+    path("", include("modules.events.urls")),
 ]

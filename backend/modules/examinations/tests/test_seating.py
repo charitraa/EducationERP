@@ -5,11 +5,10 @@ from tests.factories import (
     create_attendance_record,
     create_attendance_session,
     create_room,
-    create_staff_member,
     create_user,
 )
 
-from ..models import AdmitCard, Invigilation, SeatAllocation
+from ..models import AdmitCard, SeatAllocation
 from .base import API, TODAY, ExamTestCase
 
 EXAMS = f"{API}/exams/"

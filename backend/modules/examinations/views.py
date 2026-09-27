@@ -2,7 +2,7 @@ from django_filters import rest_framework as filters
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -388,6 +388,9 @@ class InvigilationViewSet(ExamsViewSet):
 
 @_schema("admit card", "list", "retrieve")
 class AdmitCardViewSet(ExamsViewSet):
+    """Admit cards are only ever made by ``generate-admit-cards``; there is
+    no plain create (every field would be read-only anyway)."""
+
     http_method_names = ["get", "post", "head", "options"]
     queryset = AdmitCard.objects.select_related("student", "enrollment__section__program", "exam")
     serializer_class = AdmitCardSerializer
@@ -401,6 +404,9 @@ class AdmitCardViewSet(ExamsViewSet):
         if self.action == "me":
             return [IsAuthenticated()]
         return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed("POST")
 
     @extend_schema(tags=[TAG], summary="Everything printed on the admit card", responses={200: None})
     @action(detail=True, methods=["get"])

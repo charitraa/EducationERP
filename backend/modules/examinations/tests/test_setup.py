@@ -3,9 +3,9 @@ from datetime import timedelta
 from decimal import Decimal
 
 from modules.academics.models import CalendarEvent
-from tests.factories import create_calendar_event, create_room
+from tests.factories import create_calendar_event
 
-from ..models import Exam, ExamComponent, ExamSubject
+from ..models import ExamSubject
 from .base import API, TODAY, ExamTestCase
 
 EXAMS = f"{API}/exams/"
