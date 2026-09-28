@@ -18,8 +18,11 @@ class VersioningTests(TimetableTestCase):
     def setUp(self):
         super().setUp()
         self.today = timezone.localdate()
-        self.last_monday = next_monday() - timedelta(days=7)
         self.monday = next_monday()
+        # Not `next_monday() - 7`: next_monday() jumps a full 7 days ahead when
+        # today is itself a Monday (never returns today), which would make this
+        # equal self.today instead of a Monday safely in the past.
+        self.last_monday = self.today - timedelta(days=(self.today.isoweekday() - 1) or 7)
         # Running since the start of the year.
         self.lesson = create_timetable_entry(self.a_physics, self.p1, MONDAY, room=self.r101)
 

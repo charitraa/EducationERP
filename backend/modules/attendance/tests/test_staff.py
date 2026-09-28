@@ -1,6 +1,8 @@
 """Staff days from punches, schedules, overrides and gate QR check-in."""
 from datetime import datetime, timedelta, timezone as dt_timezone
 
+from django.utils import timezone
+
 from tests.factories import create_calendar_event, create_work_schedule
 
 from ..models import Punch, StaffAttendanceDay
@@ -124,10 +126,14 @@ class OverrideTests(StaffTestCase):
         self.assertError(response, 409, "not_override")
 
     def test_a_manual_punch_needs_a_note_and_counts(self):
+        # ManualPunchSerializer rejects a future punched_at, unlike the plain
+        # record_punch() the other tests in this file call directly — clamp to
+        # "now" for the one case where MONDAY is today and 09:58 hasn't happened yet.
+        when = min(at(MONDAY, "09:58"), timezone.now() - timedelta(minutes=1))
         missing_note = self.client.post(f"{API}/punches/", {
-            "staff": self.hari.pk, "punched_at": at(MONDAY, "09:58").isoformat()})
+            "staff": self.hari.pk, "punched_at": when.isoformat()})
         response = self.client.post(f"{API}/punches/", {
-            "staff": self.hari.pk, "punched_at": at(MONDAY, "09:58").isoformat(),
+            "staff": self.hari.pk, "punched_at": when.isoformat(),
             "note": "Reader was down"})
 
         self.assertEqual(missing_note.status_code, 400)
