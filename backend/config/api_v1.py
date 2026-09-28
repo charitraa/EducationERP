@@ -33,4 +33,6 @@ urlpatterns = [
     path("", include("modules.notices.urls")),
     path("", include("modules.communication.urls")),
     path("", include("modules.support.urls")),
+    # Phase 9
+    path("", include("modules.library.urls")),
 ]

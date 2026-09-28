@@ -4,16 +4,18 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 7 complete.** Identity (Phase 1), the student foundation
+**Status: Phase 9 complete.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
 academic years, sections, teaching assignments, student placement), the
 weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
 students, staff, QR and biometric devices), examinations (Phase 5: exams,
 grading, marks, results, report cards, transcripts), finance (Phase 6:
-fee structures, invoices, scholarships, payments, refunds) and events
+fee structures, invoices, scholarships, payments, refunds), events
 (Phase 7: registration, attendance, participation, points, achievements,
-badges, titles) are built and tested. Next is Phase 8, communication — see
-[Roadmap](#roadmap).
+badges, titles), communication (Phase 8: notices, the central notification
+service, messaging, appointments, support tickets) and the library
+(Phase 9: catalog, circulation, reservations, fines) are built and tested.
+Next is Phase 10, inventory — see [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -194,6 +196,55 @@ Details: [`docs/phase-6.md`](docs/phase-6.md).
   assumes events are their only source.
 
 Details: [`docs/phase-7.md`](docs/phase-7.md).
+
+---
+
+## What Phase 8 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Notifications | `Notification` | The one door in (`notify()`) every module calls; fans out to in-app + email/SMS/push |
+| Notices | `Notice` | Draft → published, filtered by audience and campus (or every campus) |
+| Messaging | `MessageThread`, `Message` | 1:1, staff-started; either side replies; closes and reopens |
+| Appointments | `AppointmentSlot`, `Appointment` | Staff publish availability; booking is race-safe, like a seat plan |
+| Support | `SupportTicket`, `TicketComment` | Anyone raises one; `open → in_progress → resolved → closed` |
+
+- **One notification service, not five.** `finance.record_payment`,
+  `examinations.publish_exam`, `events.register` and `attendance.submit`
+  all call the same `notify()` rather than writing their own delivery
+  logic — a rule lives in one place, matching claude.md's business-event
+  pipeline.
+- **Email/SMS/push are swappable stubs.** `integrations/{email,sms,push}/`
+  each log to the console today; a real provider drops in behind the same
+  `send()` later.
+
+Details: [`docs/phase-8.md`](docs/phase-8.md).
+
+---
+
+## What Phase 9 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Catalog | `Author`, `Category`, `Publisher`, `Book` | Shared across the organization; a book's authors are many-to-many |
+| Shelving | `Shelf`, `Copy` | One physical item of a book, at one campus, on one shelf |
+| Membership | `Member` | Wraps a `Student` or `StaffMember`, never a raw user; type-based defaults |
+| Circulation | `Issue`, `Fine` | `issued → returned \| lost`; overdue/lost/damaged raises a fine |
+| Reservations | `Reservation` | Queued FIFO while a book's fully out; the next return holds a copy for 3 days |
+
+- **Book vs. Copy is the exam-paper/mark-sheet split again.** One
+  describes what it is, the other is the thing actually in front of you.
+- **Return isn't its own model.** It's `Issue.status` moving to
+  `returned`, the same shape as a support ticket's or appointment's
+  status field.
+- **Two permissions, like exams' manage/mark split.** `library.manage`
+  runs the catalog and memberships; `library.circulate` is the front-desk
+  job — an institution can grant just the one.
+- **Reservations feed Phase 8's notification service**, not a bespoke
+  alert of their own — a copy held for you fires the same `notify()`
+  every other module uses.
+
+Details: [`docs/phase-9.md`](docs/phase-9.md).
 
 ---
 
@@ -788,6 +839,27 @@ GET    /api/v1/point-rules/  point-entries/                            CRUD; POS
 GET    /api/v1/student-points/  student-points/leaderboard/  student-points/me/
 GET    /api/v1/awards/  award-rules/  student-awards/                  CRUD; POST student-awards/{id}/end/
 
+GET    /api/v1/notifications/                                         list mine, across every org
+POST   /api/v1/notifications/{id}/mark-read/  mark-all-read/
+GET    /api/v1/notices/                                               CRUD; publish/read scoped by audience+campus
+POST   /api/v1/notices/{id}/publish/
+GET    /api/v1/communication/threads/                                 mine; POST starts (staff) or replies
+GET    /api/v1/communication/threads/{id}/messages/  POST
+POST   /api/v1/communication/threads/{id}/close/
+GET    /api/v1/communication/appointment-slots/  appointments/         CRUD/book; read open to the organization
+POST   /api/v1/communication/appointments/{id}/approve/  cancel/  complete/
+GET    /api/v1/support/tickets/                                       CRUD (create only); POST {id}/assign/ etc.
+GET    /api/v1/support/tickets/{id}/comments/  POST
+
+GET    /api/v1/library/authors/  categories/  publishers/  books/      CRUD (office); read open to the organization
+GET    /api/v1/library/shelves/  copies/                               CRUD (office); copies read open to all
+POST   /api/v1/library/copies/{id}/withdraw/
+GET    /api/v1/library/members/  members/me/                          CRUD (office); POST {id}/deactivate/
+GET    /api/v1/library/issues/  issues/me/                             POST issues/ (desk); POST {id}/return/
+GET    /api/v1/library/reservations/  reservations/me/                 POST reserves; {id}/cancel/  fulfil/
+POST   /api/v1/library/reservations/expire-stale/
+GET    /api/v1/library/fines/  fines/me/                               POST {id}/pay/  waive/
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -820,9 +892,25 @@ backend/
 │   ├── admissions/    Admission
 │   ├── academics/     Department, Program, Subject, curriculum, years, terms,
 │   │                  Room, Batch, Section, TeachingAssignment
-│   └── timetable/     BellSchedule, Period, TimetableEntry, LessonChange,
-│                      clash detection, generator
-├── integrations/      biometric, payment, SMS, email, push (empty)
+│   ├── timetable/     BellSchedule, Period, TimetableEntry, LessonChange,
+│   │                  clash detection, generator
+│   ├── attendance/    AttendanceSession, AttendanceRecord, StaffAttendanceDay,
+│   │                  Punch, devices (QR, ZKTeco, generic)
+│   ├── examinations/  GradeScale, Exam, ExamSubject, MarkSheet, Mark, Result,
+│   │                  ResultPlan, ReportCard, Transcript
+│   ├── finance/       FeeStructure, Invoice, Payment, Scholarship, Refund
+│   ├── events/        Event, EventRegistration, PointRule, Award
+│   ├── notifications/ Notification (the one door in — see integrations/)
+│   ├── notices/       Notice
+│   ├── communication/ MessageThread, Message, AppointmentSlot, Appointment
+│   ├── support/       SupportTicket, TicketComment
+│   └── library/       Author, Category, Publisher, Book, Shelf, Copy, Member,
+│                      Issue, Fine, Reservation
+├── integrations/
+│   ├── biometric/     ZKTeco and generic device adapters (Phase 4)
+│   ├── email/  sms/  push/  console-logging stubs; notifications.services.notify
+│   │                  is the only caller (Phase 8)
+│   └── payment/       (empty — a real gateway is a later decision)
 └── tests/             shared factories, base test case, cross-cutting tests
 ```
 
@@ -900,8 +988,9 @@ placeholders.
 | ~~5~~ | Examinations: exams, marks, grades, results, report cards, transcripts | 3 (subjects, syllabus) |
 | ~~6~~ | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
 | ~~7~~ | Events and student points | 2 |
-| 8 | Communication: notices, notifications, support tickets | 2 |
-| 9–10 | Library, inventory | 2 |
+| ~~8~~ | Communication: notices, notifications, support tickets | 2 |
+| ~~9~~ | Library | 2 |
+| 10 | Inventory | 2 |
 | 11 | HR and payroll (extends `StaffMember`) | 2 |
 | 12 | Hostel and transport | 2, 6 |
 | 13 | Applications (public admission forms and other workflows) | 2 |
@@ -909,6 +998,7 @@ placeholders.
 
 See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
 [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),
-[`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md) and
-[`docs/phase-6.md`](docs/phase-6.md) and [`docs/phase-7.md`](docs/phase-7.md) for the data model and the conventions
-every module follows.
+[`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md),
+[`docs/phase-6.md`](docs/phase-6.md), [`docs/phase-7.md`](docs/phase-7.md),
+[`docs/phase-8.md`](docs/phase-8.md) and [`docs/phase-9.md`](docs/phase-9.md) for the data model and the
+conventions every module follows.

@@ -51,6 +51,7 @@ from modules.events.models import (
     StudentPoints,
 )
 from modules.communication.models import Appointment, AppointmentSlot, Message, MessageThread
+from modules.library.models import Author, Book, Category, Copy, Fine, Issue, Member, Publisher, Reservation, Shelf
 from modules.finance import services as finance_services
 from modules.finance.models import (
     FeeCategory,
@@ -165,6 +166,8 @@ QUERY_PARAMS = {
     "category": "event_category", "organized_by": "staff", "event": "event", "rule": "point_rule",
     "award": "award",
     "slot": "appointment_slot", "assigned_to": "user",
+    "book": "library_book", "shelf": "library_shelf", "member": "library_member",
+    "publisher": "library_publisher",
 }
 
 
@@ -336,6 +339,25 @@ def build_tenant(tag):
     ticket_comment = TicketComment.objects.create(organization=org, ticket=support_ticket, author=user,
                                                   body=f"{tag} comment")
 
+    # Phase 9 — library
+    author = Author.objects.create(organization=org, name=f"{tag} Author")
+    category = Category.objects.create(organization=org, code=f"{tag}-cat", name=f"{tag} Category")
+    publisher = Publisher.objects.create(organization=org, name=f"{tag} Publisher")
+    book = Book.objects.create(organization=org, title=f"{tag} Book", category=category, publisher=publisher)
+    book.authors.add(author)
+    shelf = Shelf.objects.create(organization=org, campus=campus, code=f"{tag}-A1")
+    copy = Copy.objects.create(organization=org, book=book, campus=campus, shelf=shelf,
+                               accession_number=f"{tag}-ACC-1", price="500.00")
+    member = Member.objects.create(organization=org, campus=campus, student=student, membership_type="student",
+                                   member_number=f"{tag}-LM-1", max_books=3, loan_period_days=14,
+                                   daily_fine_rate="5.00", joined_on=timezone.localdate())
+    issue = Issue.objects.create(organization=org, copy=copy, member=member, issued_at=timezone.now(),
+                                 due_at=timezone.now() + timedelta(days=14))
+    copy.status = "issued"
+    copy.save(update_fields=["status"])
+    fine = Fine.objects.create(organization=org, member=member, issue=issue, category="overdue", amount="10.00")
+    reservation = Reservation.objects.create(organization=org, book=book, member=member)
+
     return {
         "grade_scale": scale, "exam_type": exam_type, "exam": exam, "exam_subject": paper,
         "exam_component": component, "exam_room": exam_room, "seat_allocation": seat,
@@ -352,6 +374,9 @@ def build_tenant(tag):
         "notification": notification, "notice": notice, "message_thread": message_thread, "message": message,
         "appointment_slot": appointment_slot, "appointment": appointment, "support_ticket": support_ticket,
         "ticket_comment": ticket_comment, "comm_other_user": other_comm_user,
+        "library_author": author, "library_category": category, "library_publisher": publisher,
+        "library_book": book, "library_shelf": shelf, "library_copy": copy, "library_member": member,
+        "library_issue": issue, "library_fine": fine, "library_reservation": reservation,
         "organization": org, "campus": campus, "user": user, "role": role, "staff": staff,
         "department": department, "program": program, "subject": subject, "elective": elective,
         "curriculum": curriculum, "academic_year": year, "term": term, "room": room,
@@ -579,6 +604,15 @@ ACTION_ATTACKS.update({
         lambda a, b: (None, {"slot": b["appointment_slot"].pk}),
         lambda a, b: (None, {"slot": a["appointment_slot"].pk, "student": b["student"].pk}),
     ],
+    # IssueBookSerializer/ReserveBookSerializer, same reason as above.
+    ("IssueViewSet", "create"): [
+        lambda a, b: (None, {"copy": b["library_copy"].pk, "member": a["library_member"].pk}),
+        lambda a, b: (None, {"copy": a["library_copy"].pk, "member": b["library_member"].pk}),
+    ],
+    ("ReservationViewSet", "create"): [
+        lambda a, b: (None, {"book": b["library_book"].pk, "member": a["library_member"].pk}),
+        lambda a, b: (None, {"book": a["library_book"].pk, "member": b["library_member"].pk}),
+    ],
 })
 
 # Write actions whose body names no other record, so the detail sweep (a
@@ -636,6 +670,14 @@ NO_RECORD_INPUT = {
     ("SupportTicketViewSet", "resolve"),
     ("SupportTicketViewSet", "close"),
     ("SupportTicketViewSet", "comments"),
+    ("CopyViewSet", "withdraw"),
+    ("MemberViewSet", "deactivate"),
+    ("IssueViewSet", "return_copy"),
+    ("ReservationViewSet", "cancel"),
+    ("ReservationViewSet", "fulfil"),
+    ("ReservationViewSet", "expire_stale"),
+    ("FineViewSet", "pay"),
+    ("FineViewSet", "waive"),
 }
 
 # Collections where an empty request legitimately returns nothing for the
