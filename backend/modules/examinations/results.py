@@ -159,6 +159,7 @@ def publish_exam(exam: Exam, *, by) -> dict:
         exam.save(update_fields=["status", "published_at", "published_by", "updated_at"])
         log(AuditLog.Action.UPDATE, instance=exam, module=MODULE, actor=by,
             changes={"status": {"before": "scheduled", "after": "published"}}, metadata={"results": counts})
+    _notify_results_published(Result.objects.filter(exam=exam), exam.name, exam.organization_id)
     return counts
 
 
@@ -272,7 +273,22 @@ def publish_plan(plan: ResultPlan, *, by) -> dict:
         plan.save(update_fields=["status", "published_at", "published_by", "updated_at"])
         log(AuditLog.Action.UPDATE, instance=plan, module=MODULE, actor=by,
             changes={"status": {"before": "draft", "after": "published"}}, metadata={"results": counts})
+    _notify_results_published(Result.objects.filter(plan=plan), plan.name, plan.organization_id)
     return counts
+
+
+def _notify_results_published(results, label: str, organization_id) -> None:
+    """``ExamResultPublished`` (claude.md section 26): tell each student and
+    their guardians through the central Notification Service."""
+    from modules.notifications.services import notify
+    from modules.parents.selectors import links_for_student
+
+    for result in results.select_related("student"):
+        recipients = [result.student.user] if result.student.user_id else []
+        recipients += [link.parent.user for link in links_for_student(result.student) if link.parent.user_id]
+        notify(recipients, event_type="examinations.result_published", title=f"Results published: {label}",
+              body=f"Your result for {label} is now available.", data={"result": result.pk},
+              organization_id=organization_id)
 
 
 def unpublish_plan(plan: ResultPlan, reason: str, *, by) -> ResultPlan:

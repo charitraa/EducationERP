@@ -117,6 +117,8 @@ def register(event: Event, student, *, note: str = "", by=None) -> EventRegistra
         registration = EventRegistration.objects.create(
             organization_id=event.organization_id, event=event, student=student, note=note, status=status,
         )
+    if registration.status == RegistrationStatus.CONFIRMED:
+        _notify_registration_confirmed(registration)
     return registration
 
 
@@ -138,7 +140,24 @@ def decide_registration(registration: EventRegistration, approve: bool, *, note:
         registration.save(update_fields=["status", "decided_by", "decided_at", "decision_note", "updated_at"])
         log(AuditLog.Action.UPDATE, instance=registration, module=MODULE, actor=by,
             changes={"status": {"before": "pending", "after": registration.status}})
+    if registration.status == RegistrationStatus.CONFIRMED:
+        _notify_registration_confirmed(registration)
     return registration
+
+
+def _notify_registration_confirmed(registration: EventRegistration) -> None:
+    """``EventRegistered`` (claude.md section 26): tell the student and
+    their guardians their registration was confirmed."""
+    from modules.notifications.services import notify
+    from modules.parents.selectors import links_for_student
+
+    student = registration.student
+    recipients = [student.user] if student.user_id else []
+    recipients += [link.parent.user for link in links_for_student(student) if link.parent.user_id]
+    notify(recipients, event_type="events.registration_confirmed",
+          title=f"Registration confirmed: {registration.event.name}",
+          body=f"{student.full_name}'s registration for {registration.event.name} is confirmed.",
+          data={"registration": registration.pk}, organization_id=registration.organization_id)
 
 
 def withdraw_registration(registration: EventRegistration, *, by=None) -> EventRegistration:

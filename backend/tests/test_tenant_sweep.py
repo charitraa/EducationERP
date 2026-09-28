@@ -50,6 +50,7 @@ from modules.events.models import (
     StudentAward,
     StudentPoints,
 )
+from modules.communication.models import Appointment, AppointmentSlot, Message, MessageThread
 from modules.finance import services as finance_services
 from modules.finance.models import (
     FeeCategory,
@@ -84,9 +85,12 @@ from modules.examinations.models import (
 )
 from core.organizations.models import Organization
 from core.permissions.models import Permission
+from modules.notices.models import Notice
+from modules.notifications.models import Notification
 from modules.parents.services import link_student
 from modules.students.models import Enrollment
 from modules.students.services import place_student
+from modules.support.models import SupportTicket, TicketComment
 from tests.base import APITestCaseBase
 from tests.factories import (
     add_to_curriculum,
@@ -160,6 +164,7 @@ QUERY_PARAMS = {
     "invoice": "invoice", "payment": "payment", "fee_structure": "fee_structure", "scholarship": "scholarship",
     "category": "event_category", "organized_by": "staff", "event": "event", "rule": "point_rule",
     "award": "award",
+    "slot": "appointment_slot", "assigned_to": "user",
 }
 
 
@@ -311,6 +316,26 @@ def build_tenant(tag):
     student_award = StudentAward.objects.create(organization=org, student=student, award=award,
                                                 awarded_at=timezone.now())
 
+    # Phase 8 — communication
+    notification = Notification.objects.create(organization=org, recipient=user, event_type="test.event",
+                                               title=f"{tag} notice")
+    notice = Notice.objects.create(organization=org, campus=campus, audience="all", title=f"{tag} Notice",
+                                   body=f"{tag} body", published_at=timezone.now())
+    other_comm_user = create_user(org, email=f"comm-other@{tag}.test", first_name=f"{tag}Other",
+                                  user_type="student")
+    message_thread = MessageThread.objects.create(organization=org, campus=campus, staff_user=user,
+                                                  other_user=other_comm_user, subject=f"{tag} thread")
+    message = Message.objects.create(organization=org, thread=message_thread, sender=user, body=f"{tag} message")
+    appointment_slot = AppointmentSlot.objects.create(
+        organization=org, campus=campus, staff=staff, starts_at=timezone.now() + timedelta(days=1),
+        ends_at=timezone.now() + timedelta(days=1, minutes=30), location=f"{tag} Room")
+    appointment = Appointment.objects.create(organization=org, slot=appointment_slot, requested_by=user,
+                                             student=student, reason=f"{tag} reason")
+    support_ticket = SupportTicket.objects.create(organization=org, campus=campus, raised_by=user,
+                                                  subject=f"{tag} ticket", description=f"{tag} description")
+    ticket_comment = TicketComment.objects.create(organization=org, ticket=support_ticket, author=user,
+                                                  body=f"{tag} comment")
+
     return {
         "grade_scale": scale, "exam_type": exam_type, "exam": exam, "exam_subject": paper,
         "exam_component": component, "exam_room": exam_room, "seat_allocation": seat,
@@ -324,6 +349,9 @@ def build_tenant(tag):
         "event_attendance": event_attendance, "event_participation": event_participation,
         "point_rule": point_rule, "point_entry": point_entry, "student_points": student_points,
         "award": award, "award_rule": award_rule, "student_award": student_award,
+        "notification": notification, "notice": notice, "message_thread": message_thread, "message": message,
+        "appointment_slot": appointment_slot, "appointment": appointment, "support_ticket": support_ticket,
+        "ticket_comment": ticket_comment, "comm_other_user": other_comm_user,
         "organization": org, "campus": campus, "user": user, "role": role, "staff": staff,
         "department": department, "program": program, "subject": subject, "elective": elective,
         "curriculum": curriculum, "academic_year": year, "term": term, "room": room,
@@ -537,6 +565,20 @@ ACTION_ATTACKS.update({
     ("ExamViewSet", "generate_admit_cards"): [
         lambda a, b: ("exam", {"section": b["section"].pk}),
     ],
+    ("SupportTicketViewSet", "assign"): [
+        lambda a, b: ("support_ticket", {"assigned_to": b["user"].pk}),
+    ],
+    # A custom serializer (StartThreadSerializer/BookAppointmentSerializer) bypasses the
+    # generic create-attack, which only inspects the read-only serializer_class — attacked here
+    # by hand, the same way PointEntryViewSet/StudentAwardViewSet/MarkSheetViewSet are.
+    ("MessageThreadViewSet", "create"): [
+        lambda a, b: (None, {"other_user": b["comm_other_user"].pk, "campus": a["campus"].pk}),
+        lambda a, b: (None, {"other_user": a["comm_other_user"].pk, "campus": b["campus"].pk}),
+    ],
+    ("AppointmentViewSet", "create"): [
+        lambda a, b: (None, {"slot": b["appointment_slot"].pk}),
+        lambda a, b: (None, {"slot": a["appointment_slot"].pk, "student": b["student"].pk}),
+    ],
 })
 
 # Write actions whose body names no other record, so the detail sweep (a
@@ -582,11 +624,27 @@ NO_RECORD_INPUT = {
     ("EventRegistrationViewSet", "decide"),
     ("EventRegistrationViewSet", "withdraw"),
     ("StudentAwardViewSet", "end"),
+    ("NoticeViewSet", "publish"),
+    ("NotificationViewSet", "mark_read"),
+    ("NotificationViewSet", "mark_all_read"),
+    ("MessageThreadViewSet", "messages"),
+    ("MessageThreadViewSet", "close"),
+    ("AppointmentSlotViewSet", "cancel"),
+    ("AppointmentViewSet", "approve"),
+    ("AppointmentViewSet", "cancel"),
+    ("AppointmentViewSet", "complete"),
+    ("SupportTicketViewSet", "resolve"),
+    ("SupportTicketViewSet", "close"),
+    ("SupportTicketViewSet", "comments"),
 }
 
-# Collections that need a query to say what to list, so an empty request is a
-# 400 rather than a page of the caller's own rows. The leak checks still run.
-LIST_NEEDS_INPUT = {"ReportCardViewSet"}
+# Collections where an empty request legitimately returns nothing for the
+# all-permissions attacker fixture, so the "own rows are visible" assertion
+# doesn't apply — ReportCardViewSet needs a query to say what to list at all;
+# NotificationViewSet/MessageThreadViewSet are scoped to "am I the recipient/a
+# participant", not to a permission code, and the attacker fixture is neither.
+# The leak checks still run either way.
+LIST_NEEDS_INPUT = {"ReportCardViewSet", "NotificationViewSet", "MessageThreadViewSet"}
 
 # Writable nested serializers with no record ids inside, so there is nothing
 # to smuggle. Ones that do carry ids are attacked by hand (NESTED_ATTACKS).

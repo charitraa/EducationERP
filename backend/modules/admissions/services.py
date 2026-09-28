@@ -56,7 +56,27 @@ def _decide(admission: Admission, status: str, note: str, by) -> Admission:
 
 @transaction.atomic
 def approve_admission(*, admission: Admission, note: str = "", by=None) -> Admission:
-    return _decide(_lock(admission, "approve"), Status.APPROVED, note, by)
+    admission = _decide(_lock(admission, "approve"), Status.APPROVED, note, by)
+    _notify_application_approved(admission)
+    return admission
+
+
+def _notify_application_approved(admission: Admission) -> None:
+    """``ApplicationApproved`` (claude.md section 26). The applicant has no
+    login account yet at this stage, so this reaches them directly through
+    the (currently log-only) email/SMS adapters rather than an in-app
+    ``Notification`` — that model only ever addresses an existing ``User``."""
+    from integrations.email import base as email_backend
+    from integrations.sms import base as sms_backend
+
+    subject = "Your application has been approved"
+    body = f"Congratulations — your application ({admission.application_number}) has been approved."
+    email_backend.send(to=admission.email, subject=subject, body=body)
+    sms_backend.send(to=admission.phone, message=body)
+    if admission.guardian_email:
+        email_backend.send(to=admission.guardian_email, subject=subject, body=body)
+    if admission.guardian_phone:
+        sms_backend.send(to=admission.guardian_phone, message=body)
 
 
 @transaction.atomic

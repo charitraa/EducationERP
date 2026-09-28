@@ -28,4 +28,9 @@ urlpatterns = [
     path("", include("modules.finance.urls")),
     # Phase 7
     path("", include("modules.events.urls")),
+    # Phase 8
+    path("", include("modules.notifications.urls")),
+    path("", include("modules.notices.urls")),
+    path("", include("modules.communication.urls")),
+    path("", include("modules.support.urls")),
 ]

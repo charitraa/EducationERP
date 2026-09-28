@@ -293,7 +293,23 @@ def record_payment(invoice: Invoice, *, amount: Decimal, method: str, paid_at: d
         )
         log(AuditLog.Action.CREATE, instance=payment, module=MODULE, actor=by,
             metadata={"invoice": invoice.invoice_number, "amount": str(amount)})
+    _notify_payment_received(invoice, payment)
     return payment
+
+
+def _notify_payment_received(invoice: Invoice, payment: Payment) -> None:
+    """``PaymentReceived`` (claude.md section 26): tell the student and their
+    guardians through the central Notification Service, not by writing into
+    another module's tables directly."""
+    from modules.notifications.services import notify
+    from modules.parents.selectors import links_for_student
+
+    recipients = [invoice.student.user] if invoice.student.user_id else []
+    recipients += [link.parent.user for link in links_for_student(invoice.student) if link.parent.user_id]
+    notify(recipients, event_type="finance.payment_received",
+          title=f"Payment received: {invoice.invoice_number}",
+          body=f"{payment.amount} received against invoice {invoice.invoice_number}.",
+          data={"invoice": invoice.pk, "payment": payment.pk}, organization_id=invoice.organization_id)
 
 
 def refund_payment(payment: Payment, *, amount: Decimal, reason: str, by=None) -> Refund:

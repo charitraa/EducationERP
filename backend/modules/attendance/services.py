@@ -282,7 +282,24 @@ def submit(*, session, rest: str | None = None, by=None) -> AttendanceSession:
         session.save(update_fields=["status", "submitted_at", "submitted_by", "updated_at"])
     log(AuditLog.Action.UPDATE, instance=session, module=MODULE, actor=by,
         changes={"status": {"before": "open", "after": "submitted"}})
+    _notify_absentees(session)
     return session
+
+
+def _notify_absentees(session: AttendanceSession) -> None:
+    """``AttendanceMarked`` (claude.md section 26): tell a guardian when
+    their child is marked absent — the case they actually need to hear
+    about, not every present mark."""
+    from modules.notifications.services import notify
+    from modules.parents.selectors import links_for_student
+
+    records = session.records.filter(status=AttendanceStatus.ABSENT).select_related("enrollment__student")
+    for record in records:
+        student = record.enrollment.student
+        recipients = [link.parent.user for link in links_for_student(student) if link.parent.user_id]
+        notify(recipients, event_type="attendance.marked_absent", title="Marked absent today",
+              body=f"{student.full_name} was marked absent.", data={"record": record.pk},
+              organization_id=session.organization_id)
 
 
 def reopen(*, session, by=None) -> AttendanceSession:
