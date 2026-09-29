@@ -3,7 +3,7 @@ serializers call these so a rule lives in one place.
 """
 from django.utils import timezone
 
-from core.common.exceptions import ConflictError, PermissionDeniedError
+from core.common.exceptions import ConflictError, PermissionDeniedError, ServiceError
 from core.permissions.selectors import campus_ids_with_permission
 
 from .models import SupportTicket, TicketStatus
@@ -62,6 +62,8 @@ def ensure_can_close(user, ticket: SupportTicket) -> None:
 def assign_ticket(ticket: SupportTicket, assignee, *, by=None) -> SupportTicket:
     if ticket.status == TicketStatus.CLOSED:
         raise ConflictError("This ticket is closed.", code="closed")
+    if not holds_manage(assignee, ticket.campus_id):
+        raise ServiceError("Tickets can only be assigned to someone who can work them.", code="bad_assignee")
     ticket.assigned_to = assignee
     if ticket.status == TicketStatus.OPEN:
         ticket.status = TicketStatus.IN_PROGRESS

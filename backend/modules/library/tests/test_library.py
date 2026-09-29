@@ -115,8 +115,13 @@ class MembershipTests(LibraryTestCase):
             services.create_member(campus=self.campus)
 
     def test_a_student_cannot_have_two_memberships(self):
-        with self.assertRaises(IntegrityError), transaction.atomic():
+        with self.assertRaises(ConflictError):
             services.create_member(campus=self.campus, student=self.ram)
+
+    def test_creating_a_second_membership_over_the_api_is_a_409_not_a_500(self):
+        self.login(self.office)
+        r = self.client.post(f"{API}/library/members/", {"campus": self.campus.pk, "student": self.ram.pk})
+        self.assertError(r, 409, "already_member")
 
     def test_a_member_sees_their_own_membership(self):
         self.login(self.ram_user)

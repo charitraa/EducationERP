@@ -107,7 +107,22 @@ class AppointmentSlotViewSet(CampusScopedViewSet):
             return [IsAuthenticated(), IsSameOrganization()]
         return super().get_permissions()
 
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        services.ensure_can_manage_slot(self.request.user, staff_id=data["staff"].pk, campus_id=data["campus"].pk)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        services.ensure_can_manage_slot(self.request.user, staff_id=serializer.instance.staff_id,
+                                        campus_id=serializer.instance.campus_id)
+        data = serializer.validated_data
+        services.ensure_can_manage_slot(
+            self.request.user, staff_id=data["staff"].pk if "staff" in data else serializer.instance.staff_id,
+            campus_id=data["campus"].pk if "campus" in data else serializer.instance.campus_id)
+        super().perform_update(serializer)
+
     def perform_destroy(self, instance):
+        services.ensure_can_manage_slot(self.request.user, staff_id=instance.staff_id, campus_id=instance.campus_id)
         if instance.appointments.exclude(status="cancelled").exists():
             from core.common.exceptions import ConflictError
 
@@ -118,6 +133,7 @@ class AppointmentSlotViewSet(CampusScopedViewSet):
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         slot = self.get_object()
+        services.ensure_can_manage_slot(request.user, staff_id=slot.staff_id, campus_id=slot.campus_id)
         slot.is_cancelled = True
         slot.save(update_fields=["is_cancelled", "updated_at"])
         slot.appointments.exclude(status="cancelled").update(status="cancelled", cancelled_reason="Slot cancelled")
@@ -158,6 +174,7 @@ class AppointmentViewSet(OrganizationScopedViewSet):
         serializer = BookAppointmentSerializer(data=request.data, context=self.get_serializer_context())
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        services.ensure_can_book_for(request.user, data.get("student"))
         appointment = services.book_slot(data["slot"], requested_by=request.user, student=data.get("student"),
                                          reason=data.get("reason", ""))
         return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)

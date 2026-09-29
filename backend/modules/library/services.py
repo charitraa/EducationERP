@@ -77,6 +77,8 @@ def create_member(*, campus, student=None, staff=None, by=None, **overrides) -> 
                            code="bad_profile")
     membership_type = MembershipType.STUDENT if student is not None else MembershipType.STAFF
     organization_id = (student or staff).organization_id
+    if Member.objects.filter(organization_id=organization_id, student=student, staff=staff).exists():
+        raise ConflictError("This person is already a library member.", code="already_member")
     defaults = {**MEMBERSHIP_DEFAULTS[membership_type], **overrides}
     with transaction.atomic():
         member = Member.objects.create(

@@ -104,6 +104,32 @@ class AppointmentTests(CommunicationTestCase):
         r = self.client.post(f"{API}/communication/appointments/", {"slot": slot.pk})
         self.assertEqual(r.status_code, 201, r.data)
 
+    def test_a_parent_cannot_book_for_a_student_who_is_not_their_child(self):
+        slot = self.make_slot()
+        self.login(self.rita_user)
+        r = self.client.post(f"{API}/communication/appointments/", {"slot": slot.pk, "student": self.ram.pk})
+        self.assertEqual(r.status_code, 403, r.data)
+        self.assertEqual(r.data["error"]["code"], "not_your_student")
+
+    def test_a_parent_can_book_for_their_linked_child(self):
+        from modules.parents.models import StudentParent
+        from tests.factories import create_parent
+
+        parent = create_parent(self.org, first_name="Rita", user=self.rita_user)
+        StudentParent.objects.create(organization=self.org, student=self.ram, parent=parent, relationship="mother")
+        slot = self.make_slot()
+        self.login(self.rita_user)
+        r = self.client.post(f"{API}/communication/appointments/", {"slot": slot.pk, "student": self.ram.pk})
+        self.assertEqual(r.status_code, 201, r.data)
+
+    def test_a_student_cannot_book_for_another_student(self):
+        sita_user = create_user(self.org, email="sita@kmc.test", user_type="student")
+        sita = create_student(self.campus, student_number="S-2", first_name="Sita", user=sita_user)
+        slot = self.make_slot()
+        self.login(self.ram_user)
+        r = self.client.post(f"{API}/communication/appointments/", {"slot": slot.pk, "student": sita.pk})
+        self.assertEqual(r.status_code, 403, r.data)
+
     def test_the_staff_member_can_approve(self):
         slot = self.make_slot()
         appointment = book_slot(slot, requested_by=self.ram_user, student=self.ram)
@@ -125,6 +151,15 @@ class AppointmentTests(CommunicationTestCase):
         # communication.manage_slots override) — a 404, not a 403.
         r = self.client.post(f"{API}/communication/appointments/{appointment.pk}/approve/")
         self.assertEqual(r.status_code, 404)
+
+    def test_a_completed_appointment_cannot_be_cancelled(self):
+        appointment = book_slot(self.make_slot(), requested_by=self.ram_user, student=self.ram)
+        appointment.status = "completed"
+        appointment.save()
+        self.login(self.ram_user)
+        r = self.client.post(f"{API}/communication/appointments/{appointment.pk}/cancel/", {"reason": "oops"})
+        self.assertEqual(r.status_code, 409, r.data)
+        self.assertEqual(r.data["error"]["code"], "already_completed")
 
     def test_the_requester_can_cancel_their_own_booking(self):
         slot = self.make_slot()
@@ -153,3 +188,50 @@ class AppointmentTests(CommunicationTestCase):
                              {"campus": self.campus.pk, "staff": self.hari.pk,
                               "starts_at": "2030-01-01T10:00:00Z", "ends_at": "2030-01-01T10:30:00Z"})
         self.assertEqual(r.status_code, 201, r.data)
+
+
+class SlotOwnershipTests(CommunicationTestCase):
+    """``publish_slots`` covers your own slots; ``manage_slots`` is the office override."""
+
+    def setUp(self):
+        super().setUp()
+        self.other = create_staff_member(self.campus, employee_number="E-2", first_name="Other")
+        self.other_user = user_with_system_role(self.org, "staff", email="other@kmc.test", campus=self.campus)
+        self.other.user = self.other_user
+        self.other.save(update_fields=["user"])
+        self.office = user_with_system_role(self.org, "campus-admin", email="office@kmc.test", campus=self.campus)
+        start = timezone.now() + timedelta(days=1)
+        self.payload = {"campus": self.campus.pk, "staff": self.hari.pk, "starts_at": start.isoformat(),
+                        "ends_at": (start + timedelta(minutes=30)).isoformat()}
+        self.slot = AppointmentSlot.objects.create(
+            organization=self.org, campus=self.campus, staff=self.hari, starts_at=start,
+            ends_at=start + timedelta(minutes=30))
+
+    def test_staff_can_publish_their_own_slot(self):
+        self.login(self.hari_user)
+        self.assertEqual(self.client.post(f"{API}/communication/appointment-slots/", self.payload).status_code, 201)
+
+    def test_staff_cannot_publish_a_slot_for_someone_else(self):
+        self.login(self.other_user)
+        r = self.client.post(f"{API}/communication/appointment-slots/", self.payload)
+        self.assertEqual(r.status_code, 403, r.data)
+
+    def test_staff_cannot_edit_delete_or_cancel_someone_elses_slot(self):
+        self.login(self.other_user)
+        url = f"{API}/communication/appointment-slots/{self.slot.pk}/"
+        self.assertEqual(self.client.patch(url, {"location": "x"}).status_code, 403)
+        self.assertEqual(self.client.post(url + "cancel/").status_code, 403)
+        self.assertEqual(self.client.delete(url).status_code, 403)
+        self.slot.refresh_from_db()
+        self.assertFalse(self.slot.is_cancelled)
+
+    def test_staff_cannot_reassign_their_own_slot_to_someone_else(self):
+        self.login(self.hari_user)
+        url = f"{API}/communication/appointment-slots/{self.slot.pk}/"
+        self.assertEqual(self.client.patch(url, {"staff": self.other.pk}).status_code, 403)
+
+    def test_the_office_can_manage_any_slot_at_their_campus(self):
+        self.login(self.office)
+        url = f"{API}/communication/appointment-slots/{self.slot.pk}/"
+        self.assertEqual(self.client.patch(url, {"location": "Room 2"}).status_code, 200)
+        self.assertEqual(self.client.post(url + "cancel/").status_code, 200)

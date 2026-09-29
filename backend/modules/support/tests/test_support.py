@@ -50,6 +50,13 @@ class TicketTests(SupportTestCase):
         r = self.client.post(f"{API}/support/tickets/{pk}/assign/", {"assigned_to": self.office.pk})
         self.assertEqual(r.status_code, 403)
 
+    def test_a_ticket_cannot_be_assigned_to_someone_who_cannot_work_it(self):
+        pk = self.raise_ticket().data["id"]
+        self.login(self.office)
+        r = self.client.post(f"{API}/support/tickets/{pk}/assign/", {"assigned_to": self.ram_user.pk})
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertEqual(r.data["error"]["code"], "bad_assignee")
+
     def test_the_office_assigns_and_it_moves_to_in_progress(self):
         pk = self.raise_ticket().data["id"]
         self.login(self.office)

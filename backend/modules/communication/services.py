@@ -79,6 +79,38 @@ def book_slot(slot: AppointmentSlot, *, requested_by, student=None, reason: str 
     return appointment
 
 
+def ensure_can_manage_slot(user, *, staff_id, campus_id) -> None:
+    """A slot's own staff member, or anyone holding ``communication.manage_slots``
+    at its campus. ``communication.publish_slots`` alone only ever covers your own slots."""
+    staff = staff_member_for_user(user)
+    if staff is not None and staff.pk == staff_id:
+        return
+    campus_ids = campus_ids_with_permission(user, MANAGE)
+    if campus_ids is None or campus_id in campus_ids:
+        return
+    raise PermissionDeniedError("You can only manage your own appointment slots.", code="not_yours")
+
+
+def ensure_can_book_for(user, student) -> None:
+    """Booking on behalf of a student: that student themself, one of their linked
+    parents, or the office/staff side who hold ``manage_slots`` at their campus."""
+    if student is None:
+        return
+    from modules.parents.selectors import parent_for_user
+    from modules.students.selectors import student_for_user
+
+    own = student_for_user(user)
+    if own is not None and own.pk == student.pk:
+        return
+    parent = parent_for_user(user)
+    if parent is not None and student.parent_links.filter(parent=parent).exists():
+        return
+    campus_ids = campus_ids_with_permission(user, MANAGE)
+    if campus_ids is None or student.campus_id in campus_ids:
+        return
+    raise PermissionDeniedError("You can only book on behalf of your own student or child.", code="not_your_student")
+
+
 def ensure_can_manage_appointment(user, appointment: Appointment) -> None:
     """This slot's own staff member, or anyone holding ``communication.manage_slots``
     at that campus — the same "own record, or the office" shape as ``events.can_run``."""
@@ -109,6 +141,8 @@ def approve_appointment(appointment: Appointment, *, by) -> Appointment:
 def cancel_appointment(appointment: Appointment, reason: str) -> Appointment:
     if appointment.status == AppointmentStatus.CANCELLED:
         raise ConflictError("Already cancelled.", code="already_cancelled")
+    if appointment.status == AppointmentStatus.COMPLETED:
+        raise ConflictError("A completed appointment can't be cancelled.", code="already_completed")
     if not reason.strip():
         raise ServiceError("Say why it's being cancelled.", code="reason_required")
     appointment.status = AppointmentStatus.CANCELLED
