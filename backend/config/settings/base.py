@@ -84,6 +84,8 @@ MODULE_APPS: list[str] = [
     "modules.support",
     # Phase 9 — library
     "modules.library",
+    # Phase 10 — inventory
+    "modules.inventory",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS

@@ -4,7 +4,7 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 9 complete.** Identity (Phase 1), the student foundation
+**Status: Phase 10 complete.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
 academic years, sections, teaching assignments, student placement), the
 weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
@@ -13,9 +13,11 @@ grading, marks, results, report cards, transcripts), finance (Phase 6:
 fee structures, invoices, scholarships, payments, refunds), events
 (Phase 7: registration, attendance, participation, points, achievements,
 badges, titles), communication (Phase 8: notices, the central notification
-service, messaging, appointments, support tickets) and the library
-(Phase 9: catalog, circulation, reservations, fines) are built and tested.
-Next is Phase 10, inventory — see [Roadmap](#roadmap).
+service, messaging, appointments, support tickets), the library
+(Phase 9: catalog, circulation, reservations, fines) and inventory
+(Phase 10: stores, stock ledger, purchasing, assets, maintenance, disposal)
+are built and tested. Next is Phase 11, HR and payroll — see
+[Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -245,6 +247,32 @@ Details: [`docs/phase-8.md`](docs/phase-8.md).
   every other module uses.
 
 Details: [`docs/phase-9.md`](docs/phase-9.md).
+
+---
+
+## What Phase 10 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Catalog | `ItemCategory`, `Item`, `Supplier`, `Store` | An item is a *consumable* (counted) or an *asset* (tracked one by one); a store sits at one campus |
+| Stock | `StockLevel`, `StockMovement` | Quantity per (item, store), moved only by an append-only ledger that can't go below zero |
+| Movements | `StockIssue`, `StockTransfer` | Issue vouchers to staff or a department; transfers between stores at any campus; reasoned adjustments |
+| Purchasing | `PurchaseOrder`, `PurchaseLine` | `draft → ordered → partial → received`; deliveries in parts; cancel, or close short once part has arrived |
+| Assets | `Asset`, `AssetAssignment` | One tagged unit each; assigned to a staff member, student, room or department, with history; moved between stores |
+| Upkeep, end of life | `MaintenanceRecord`, `Disposal` | Scheduled → in progress → completed; disposal is final and keeps the asset in the register |
+
+- **Item vs. Asset is Book vs. Copy again.** One is the catalog entry,
+  the other the physical thing with its own tag and history.
+- **Stock is a ledger, not an edited number**, the same way
+  `Invoice.paid_amount` follows its payments. A mistake is a new,
+  reasoned adjustment.
+- **Three permissions, split by job.** `inventory.manage` for the office,
+  `inventory.stock` for the storekeeper, `inventory.view` to look.
+- **Low stock feeds Phase 8's `notify()`** once, when a store crosses
+  the item's reorder level. It is not a cron job.
+- **Nothing in use can be deleted** (409 `in_use`); deactivate it instead.
+
+Details: [`docs/phase-10.md`](docs/phase-10.md).
 
 ---
 
@@ -860,6 +888,14 @@ GET    /api/v1/library/reservations/  reservations/me/                 POST rese
 POST   /api/v1/library/reservations/expire-stale/
 GET    /api/v1/library/fines/  fines/me/                               POST {id}/pay/  waive/
 
+GET    /api/v1/inventory/categories/  suppliers/  items/  stores/      CRUD (office); DELETE 409 while in use
+GET    /api/v1/inventory/stock-levels/  stock-movements/               ?low=1; POST stock-levels/adjust/
+GET    /api/v1/inventory/stock-transfers/  stock-issues/               POST moves / issues stock (storekeeper)
+GET    /api/v1/inventory/purchase-orders/                              POST drafts; {id}/place/  cancel/  receive/
+GET    /api/v1/inventory/assets/  assets/me/                           POST registers; {id}/assign/  return/  move/  dispose/
+GET    /api/v1/inventory/asset-assignments/  disposals/                read-only history
+GET    /api/v1/inventory/maintenance/                                  POST schedules; {id}/start/  complete/  cancel/
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -904,8 +940,10 @@ backend/
 │   ├── notices/       Notice
 │   ├── communication/ MessageThread, Message, AppointmentSlot, Appointment
 │   ├── support/       SupportTicket, TicketComment
-│   └── library/       Author, Category, Publisher, Book, Shelf, Copy, Member,
-│                      Issue, Fine, Reservation
+│   ├── library/       Author, Category, Publisher, Book, Shelf, Copy, Member,
+│   │                  Issue, Fine, Reservation
+│   └── inventory/     Item, Store, StockLevel, StockMovement, PurchaseOrder,
+│                      Asset, AssetAssignment, MaintenanceRecord, Disposal
 ├── integrations/
 │   ├── biometric/     ZKTeco and generic device adapters (Phase 4)
 │   ├── email/  sms/  push/  console-logging stubs; notifications.services.notify
@@ -974,7 +1012,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1 to 4 are done. The order below is the **dependency order**: each
+Phases 1 to 10 are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -990,7 +1028,7 @@ placeholders.
 | ~~7~~ | Events and student points | 2 |
 | ~~8~~ | Communication: notices, notifications, support tickets | 2 |
 | ~~9~~ | Library | 2 |
-| 10 | Inventory | 2 |
+| ~~10~~ | Inventory | 2 |
 | 11 | HR and payroll (extends `StaffMember`) | 2 |
 | 12 | Hostel and transport | 2, 6 |
 | 13 | Applications (public admission forms and other workflows) | 2 |
@@ -1000,5 +1038,5 @@ See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
 [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),
 [`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md),
 [`docs/phase-6.md`](docs/phase-6.md), [`docs/phase-7.md`](docs/phase-7.md),
-[`docs/phase-8.md`](docs/phase-8.md) and [`docs/phase-9.md`](docs/phase-9.md) for the data model and the
+[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md) and [`docs/phase-10.md`](docs/phase-10.md) for the data model and the
 conventions every module follows.

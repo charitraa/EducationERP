@@ -51,6 +51,23 @@ from modules.events.models import (
     StudentPoints,
 )
 from modules.communication.models import Appointment, AppointmentSlot, Message, MessageThread
+from modules.inventory.models import (
+    Asset,
+    AssetAssignment,
+    Disposal,
+    Item,
+    ItemCategory,
+    MaintenanceRecord,
+    PurchaseLine,
+    PurchaseOrder,
+    StockIssue,
+    StockIssueLine,
+    StockLevel,
+    StockMovement,
+    StockTransfer,
+    Store,
+    Supplier,
+)
 from modules.library.models import Author, Book, Category, Copy, Fine, Issue, Member, Publisher, Reservation, Shelf
 from modules.finance import services as finance_services
 from modules.finance.models import (
@@ -168,6 +185,10 @@ QUERY_PARAMS = {
     "slot": "appointment_slot", "assigned_to": "user",
     "book": "library_book", "shelf": "library_shelf", "member": "library_member",
     "publisher": "library_publisher",
+    "item": "inventory_item", "store": "inventory_store", "from_store": "inventory_store",
+    "to_store": "inventory_store", "supplier": "inventory_supplier", "asset": "inventory_asset",
+    "purchase_line": "inventory_po_line", "stock_issue": "inventory_stock_issue",
+    "transfer": "inventory_transfer",
 }
 
 
@@ -358,6 +379,38 @@ def build_tenant(tag):
     fine = Fine.objects.create(organization=org, member=member, issue=issue, category="overdue", amount="10.00")
     reservation = Reservation.objects.create(organization=org, book=book, member=member)
 
+    # Phase 10 — inventory
+    item_category = ItemCategory.objects.create(organization=org, code=f"{tag}-icat", name=f"{tag} Item Category")
+    supplier = Supplier.objects.create(organization=org, name=f"{tag} Supplier")
+    stock_item = Item.objects.create(organization=org, category=item_category, code=f"{tag}-item",
+                                     name=f"{tag} Item", reorder_level=2)
+    asset_item = Item.objects.create(organization=org, code=f"{tag}-aitem", name=f"{tag} Laptop", kind="asset")
+    store = Store.objects.create(organization=org, campus=campus, code=f"{tag}-st", name=f"{tag} Store")
+    store2 = Store.objects.create(organization=org, campus=campus, code=f"{tag}-st2", name=f"{tag} Store 2")
+    stock_level = StockLevel.objects.create(organization=org, item=stock_item, store=store, quantity=10)
+    stock_movement = StockMovement.objects.create(organization=org, item=stock_item, store=store, kind="receipt",
+                                                  delta=10, balance_after=10, note=f"{tag} movement")
+    stock_transfer = StockTransfer.objects.create(organization=org, item=stock_item, from_store=store,
+                                                  to_store=store2, quantity=1)
+    stock_issue = StockIssue.objects.create(organization=org, number=f"{tag}-SI-1", store=store, staff=staff,
+                                            issued_on=timezone.localdate())
+    stock_issue_line = StockIssueLine.objects.create(organization=org, issue=stock_issue, item=stock_item,
+                                                     quantity=1)
+    purchase_order = PurchaseOrder.objects.create(organization=org, number=f"{tag}-PO-1", supplier=supplier,
+                                                  store=store, campus=campus, status="ordered")
+    purchase_line = PurchaseLine.objects.create(organization=org, order=purchase_order, item=stock_item,
+                                                quantity=5, unit_price="10.00")
+    asset = Asset.objects.create(organization=org, item=asset_item, store=store, campus=campus,
+                                 tag=f"{tag}-AST-1", serial_number=f"{tag}-SN", status="assigned")
+    asset_assignment = AssetAssignment.objects.create(organization=org, asset=asset, staff=staff,
+                                                      assigned_on=timezone.localdate())
+    maintenance = MaintenanceRecord.objects.create(organization=org, asset=asset, kind="repair",
+                                                   description=f"{tag} repair")
+    old_asset = Asset.objects.create(organization=org, item=asset_item, store=store, campus=campus,
+                                     tag=f"{tag}-AST-2", status="disposed")
+    disposal = Disposal.objects.create(organization=org, asset=old_asset, method="scrapped",
+                                       disposed_on=timezone.localdate(), reason=f"{tag} disposal")
+
     return {
         "grade_scale": scale, "exam_type": exam_type, "exam": exam, "exam_subject": paper,
         "exam_component": component, "exam_room": exam_room, "seat_allocation": seat,
@@ -377,6 +430,14 @@ def build_tenant(tag):
         "library_author": author, "library_category": category, "library_publisher": publisher,
         "library_book": book, "library_shelf": shelf, "library_copy": copy, "library_member": member,
         "library_issue": issue, "library_fine": fine, "library_reservation": reservation,
+        "inventory_category": item_category, "inventory_supplier": supplier, "inventory_item": stock_item,
+        "inventory_asset_item": asset_item, "inventory_store": store, "inventory_store2": store2,
+        "inventory_level": stock_level, "inventory_movement": stock_movement,
+        "inventory_transfer": stock_transfer, "inventory_stock_issue": stock_issue,
+        "inventory_stock_issue_line": stock_issue_line, "inventory_po": purchase_order,
+        "inventory_po_line": purchase_line, "inventory_asset": asset,
+        "inventory_assignment": asset_assignment, "inventory_maintenance": maintenance,
+        "inventory_old_asset": old_asset, "inventory_disposal": disposal,
         "organization": org, "campus": campus, "user": user, "role": role, "staff": staff,
         "department": department, "program": program, "subject": subject, "elective": elective,
         "curriculum": curriculum, "academic_year": year, "term": term, "room": room,
@@ -613,6 +674,61 @@ ACTION_ATTACKS.update({
         lambda a, b: (None, {"book": b["library_book"].pk, "member": a["library_member"].pk}),
         lambda a, b: (None, {"book": a["library_book"].pk, "member": b["library_member"].pk}),
     ],
+    # Phase 10: every inventory write goes through a plain input serializer, so each
+    # foreign id is attacked by hand, nested line ids included.
+    ("StockLevelViewSet", "adjust"): [
+        lambda a, b: (None, {"item": b["inventory_item"].pk, "store": a["inventory_store"].pk, "delta": 1,
+                             "reason": "x"}),
+        lambda a, b: (None, {"item": a["inventory_item"].pk, "store": b["inventory_store"].pk, "delta": 1,
+                             "reason": "x"}),
+    ],
+    ("StockTransferViewSet", "create"): [
+        lambda a, b: (None, {"item": b["inventory_item"].pk, "from_store": a["inventory_store"].pk,
+                             "to_store": a["inventory_store2"].pk, "quantity": 1}),
+        lambda a, b: (None, {"item": a["inventory_item"].pk, "from_store": b["inventory_store"].pk,
+                             "to_store": a["inventory_store2"].pk, "quantity": 1}),
+        lambda a, b: (None, {"item": a["inventory_item"].pk, "from_store": a["inventory_store"].pk,
+                             "to_store": b["inventory_store2"].pk, "quantity": 1}),
+    ],
+    ("StockIssueViewSet", "create"): [
+        lambda a, b: (None, {"store": b["inventory_store"].pk, "staff": a["staff"].pk,
+                             "lines": [{"item": a["inventory_item"].pk, "quantity": 1}]}),
+        lambda a, b: (None, {"store": a["inventory_store"].pk, "staff": b["staff"].pk,
+                             "lines": [{"item": a["inventory_item"].pk, "quantity": 1}]}),
+        lambda a, b: (None, {"store": a["inventory_store"].pk, "department": b["department"].pk,
+                             "lines": [{"item": a["inventory_item"].pk, "quantity": 1}]}),
+        lambda a, b: (None, {"store": a["inventory_store"].pk, "staff": a["staff"].pk,
+                             "lines": [{"item": b["inventory_item"].pk, "quantity": 1}]}),
+    ],
+    ("PurchaseOrderViewSet", "create"): [
+        lambda a, b: (None, {"supplier": b["inventory_supplier"].pk, "store": a["inventory_store"].pk,
+                             "lines": [{"item": a["inventory_item"].pk, "quantity": 1, "unit_price": "1"}]}),
+        lambda a, b: (None, {"supplier": a["inventory_supplier"].pk, "store": b["inventory_store"].pk,
+                             "lines": [{"item": a["inventory_item"].pk, "quantity": 1, "unit_price": "1"}]}),
+        lambda a, b: (None, {"supplier": a["inventory_supplier"].pk, "store": a["inventory_store"].pk,
+                             "lines": [{"item": b["inventory_item"].pk, "quantity": 1, "unit_price": "1"}]}),
+    ],
+    ("PurchaseOrderViewSet", "receive"): [
+        lambda a, b: ("inventory_po", {"lines": [{"line": b["inventory_po_line"].pk, "quantity": 1}]}),
+    ],
+    ("AssetViewSet", "create"): [
+        lambda a, b: (None, {"item": b["inventory_asset_item"].pk, "store": a["inventory_store"].pk}),
+        lambda a, b: (None, {"item": a["inventory_asset_item"].pk, "store": b["inventory_store"].pk}),
+    ],
+    ("AssetViewSet", "assign"): [
+        lambda a, b: ("inventory_asset", {"staff": b["staff"].pk}),
+        lambda a, b: ("inventory_asset", {"student": b["student"].pk}),
+        lambda a, b: ("inventory_asset", {"room": b["room"].pk}),
+        lambda a, b: ("inventory_asset", {"department": b["department"].pk}),
+    ],
+    ("AssetViewSet", "move"): [
+        lambda a, b: ("inventory_asset", {"store": b["inventory_store"].pk}),
+    ],
+    ("MaintenanceViewSet", "create"): [
+        lambda a, b: (None, {"asset": b["inventory_asset"].pk, "kind": "repair", "description": "x"}),
+        lambda a, b: (None, {"asset": a["inventory_asset"].pk, "kind": "repair", "description": "x",
+                             "supplier": b["inventory_supplier"].pk}),
+    ],
 })
 
 # Write actions whose body names no other record, so the detail sweep (a
@@ -678,6 +794,13 @@ NO_RECORD_INPUT = {
     ("ReservationViewSet", "expire_stale"),
     ("FineViewSet", "pay"),
     ("FineViewSet", "waive"),
+    ("PurchaseOrderViewSet", "place"),
+    ("PurchaseOrderViewSet", "cancel"),
+    ("AssetViewSet", "return_asset"),
+    ("AssetViewSet", "dispose"),
+    ("MaintenanceViewSet", "start"),
+    ("MaintenanceViewSet", "complete"),
+    ("MaintenanceViewSet", "cancel"),
 }
 
 # Collections where an empty request legitimately returns nothing for the
