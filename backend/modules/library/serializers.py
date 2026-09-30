@@ -87,6 +87,10 @@ class ShelfSerializer(OwnedSerializer):
     def validate(self, attrs):
         ensure_unique_together(self, attrs, ["campus", "code"], "This shelf code is already used at this campus.",
                               extra={"organization_id": target_organization_id(self)})
+        campus = attrs.get("campus")
+        if self.instance is not None and campus is not None and campus != self.instance.campus \
+                and self.instance.copies.exists():
+            raise serializers.ValidationError({"campus": "Copies are on this shelf; move them first."})
         return attrs
 
 
@@ -110,6 +114,13 @@ class CopySerializer(OwnedSerializer):
         if value is not None and value.organization_id != target_organization_id(self):
             raise serializers.ValidationError("Unknown shelf.")
         return value
+
+    def validate(self, attrs):
+        campus = attrs.get("campus", getattr(self.instance, "campus", None))
+        shelf = attrs.get("shelf", getattr(self.instance, "shelf", None))
+        if shelf is not None and campus is not None and shelf.campus_id != campus.pk:
+            raise serializers.ValidationError({"shelf": "This shelf is at another campus."})
+        return attrs
 
 
 # ---------------------------------------------------------------------------

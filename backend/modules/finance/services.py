@@ -7,6 +7,7 @@ from datetime import date as Date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from core.audit.models import AuditLog
@@ -119,6 +120,11 @@ def _scholarship_lines(student, category_totals: dict, on: Date, by=None) -> lis
     return lines
 
 
+def _matching_sections(fee_structure: FeeStructure):
+    return Section.objects.filter(organization_id=fee_structure.organization_id, program=fee_structure.program,
+                                  level=fee_structure.level, academic_year=fee_structure.academic_year)
+
+
 def generate_term_invoices(fee_structure: FeeStructure, term, *, by, section=None, due_date: Date | None = None) -> dict:
     """One invoice per student currently placed in a section that matches
     the fee structure's program, level and academic year, for its
@@ -130,11 +136,15 @@ def generate_term_invoices(fee_structure: FeeStructure, term, *, by, section=Non
     if not items:
         raise ServiceError("This fee structure has no per-term items.", code="no_items")
 
-    sections = Section.objects.filter(organization_id=fee_structure.organization_id, program=fee_structure.program,
-                                      level=fee_structure.level, academic_year=fee_structure.academic_year)
+    sections = _matching_sections(fee_structure)
     if section is not None:
         sections = sections.filter(pk=section.pk)
-    enrollments = (Enrollment.objects.on(term.start_date).filter(section__in=sections)
+    # Who is in the class today, kept inside the term: billing ahead uses its
+    # first day, billing afterwards its last. Not always the first day, or a
+    # student who joins mid-term (a late admission, a transfer in) would
+    # never be billed however often this runs.
+    on = min(max(timezone.localdate(), term.start_date), term.end_date)
+    enrollments = (Enrollment.objects.on(on).filter(section__in=sections)
                   .select_related("student", "campus"))
     already = set(Invoice.objects.filter(term=term, student_id__in=enrollments.values("student_id"))
                  .exclude(status=InvoiceStatus.CANCELLED).values_list("student_id", flat=True))
@@ -178,9 +188,16 @@ def generate_one_time_invoice(fee_structure: FeeStructure, student, *, by, due_d
             status=InvoiceStatus.CANCELLED).exists():
         raise ConflictError("This student already has a one-time invoice from this fee structure.",
                             code="already_invoiced")
-    enrollment = Enrollment.objects.on(timezone.localdate()).filter(student=student).first()
+    # The student's class now, or one they're placed in ahead (an admission
+    # billed before the year starts), of this structure's program, level and
+    # year. Otherwise another program's fees could be billed to them.
+    today = timezone.localdate()
+    enrollment = (Enrollment.objects.filter(student=student, section__in=_matching_sections(fee_structure))
+                  .filter(Q(ended_on__isnull=True) | Q(ended_on__gt=today))
+                  .select_related("campus").order_by("started_on").first())
     if enrollment is None:
-        raise ServiceError("This student isn't currently placed in a class.", code="not_placed")
+        raise ServiceError("This student isn't placed in a class this fee structure covers "
+                           "(its program, level and academic year).", code="not_placed")
     with transaction.atomic():
         invoice = Invoice.objects.create(
             organization_id=fee_structure.organization_id, campus=enrollment.campus, student=student,

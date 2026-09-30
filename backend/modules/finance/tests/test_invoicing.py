@@ -3,6 +3,7 @@ from datetime import timedelta
 from decimal import Decimal as D
 
 from modules.students.services import place_student
+from tests.factories import create_student
 
 from ..models import Invoice, InvoiceStatus, Scholarship, StudentScholarship
 from .base import API, TODAY, FinanceTestCase
@@ -31,6 +32,16 @@ class TermInvoiceTests(FinanceTestCase):
     def test_running_it_again_only_bills_whoever_is_new(self):
         self.generate()
         late = self.student("S-9", "Late", self.section_a)
+        r = self.generate()
+        self.assertEqual(r.data, {"created": 1, "skipped": 4})
+        self.assertTrue(Invoice.objects.filter(student=late, term=self.term1).exists())
+
+    def test_a_student_who_joins_mid_term_is_billed_on_a_rerun(self):
+        # Admitted and placed after the term began: not in any class on its
+        # first day, so billing by that day alone would never reach them.
+        self.generate()
+        late = create_student(self.campus, student_number="S-9", first_name="Late", admitted_on=TODAY)
+        place_student(student=late, section=self.section_a)
         r = self.generate()
         self.assertEqual(r.data, {"created": 1, "skipped": 4})
         self.assertTrue(Invoice.objects.filter(student=late, term=self.term1).exists())
@@ -174,6 +185,43 @@ class OneTimeInvoiceTests(FinanceTestCase):
                                                     category=self.tuition, amount=D("1"), frequency="per_term")
         r = self.client.post(f"{STRUCTURES}{structure.pk}/generate-one-time-invoice/", {"student": self.ram.pk})
         self.assertError(r, 400, "no_items")
+
+    def test_a_student_of_another_program_is_refused(self):
+        from tests.factories import create_program, create_section
+
+        other = create_program(self.org, code="CSIT", name="BSc CSIT", first_level=1, last_level=8)
+        csit = create_section(self.campus, other, self.year, level=1, name="A")
+        outsider = self.student("S-8", "Outsider", csit)
+        self.assertError(self.generate(outsider), 400, "not_placed")
+        self.assertFalse(Invoice.objects.filter(student=outsider).exists())
+
+    def test_a_student_of_another_level_is_refused(self):
+        from tests.factories import create_section
+
+        grade12 = create_section(self.campus, self.program, self.year, level=12, name="A")
+        senior = self.student("S-8", "Senior", grade12)
+        self.assertError(self.generate(senior), 400, "not_placed")
+
+    def test_an_unplaced_student_is_refused(self):
+        unplaced = create_student(self.campus, student_number="S-8", first_name="New", admitted_on=TODAY)
+        self.assertError(self.generate(unplaced), 400, "not_placed")
+
+    def test_a_student_placed_ahead_into_the_class_can_be_billed(self):
+        from tests.factories import create_academic_year, create_section
+
+        next_year = create_academic_year(self.org, name="Next", start=self.year.end_date + timedelta(days=1),
+                                         end=self.year.end_date + timedelta(days=365))
+        structure = self.structure.__class__.objects.create(organization=self.org, program=self.program, level=11,
+                                                            academic_year=next_year, name="Grade 11 next year")
+        self.admission_item.__class__.objects.create(organization=self.org, fee_structure=structure,
+                                                     category=self.admission_fee, amount=D("2500"),
+                                                     frequency="one_time")
+        next_a = create_section(self.campus, self.program, next_year, level=11, name="A")
+        newcomer = create_student(self.campus, student_number="S-8", first_name="Next", admitted_on=TODAY)
+        place_student(student=newcomer, section=next_a, on_date=next_year.start_date)
+        r = self.client.post(f"{STRUCTURES}{structure.pk}/generate-one-time-invoice/", {"student": newcomer.pk})
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["total"], "2500.00")
 
     def test_due_date_can_be_given(self):
         r = self.generate(self.ram, due_date=(TODAY + timedelta(days=30)).isoformat())

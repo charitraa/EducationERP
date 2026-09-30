@@ -2,10 +2,11 @@ from django.db.models import Q
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import MethodNotAllowed, NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from core.common.exceptions import ConflictError
 from core.common.mixins import CampusScopedViewSet, OrganizationScopedViewSet
 from core.common.permissions import IsSameOrganization
 from core.permissions.selectors import campus_ids_with_permission
@@ -58,6 +59,12 @@ class AuthorViewSet(OrganizationScopedViewSet):
             return [IsAuthenticated(), IsSameOrganization()]
         return super().get_permissions()
 
+    def perform_destroy(self, instance):
+        # A soft delete skips the database's PROTECT, so the check lives here.
+        if Book.objects.filter(authors=instance).exists():
+            raise ConflictError("Books in the catalog list this author.", code="in_use")
+        super().perform_destroy(instance)
+
 
 @extend_schema_view(
     list=extend_schema(tags=[TAG]), retrieve=extend_schema(tags=[TAG]), create=extend_schema(tags=[TAG]),
@@ -76,6 +83,11 @@ class CategoryViewSet(OrganizationScopedViewSet):
             return [IsAuthenticated(), IsSameOrganization()]
         return super().get_permissions()
 
+    def perform_destroy(self, instance):
+        if Book.objects.filter(category=instance).exists():
+            raise ConflictError("Books in the catalog use this category.", code="in_use")
+        super().perform_destroy(instance)
+
 
 @extend_schema_view(
     list=extend_schema(tags=[TAG]), retrieve=extend_schema(tags=[TAG]), create=extend_schema(tags=[TAG]),
@@ -93,6 +105,11 @@ class PublisherViewSet(OrganizationScopedViewSet):
         if self.action in ("list", "retrieve"):
             return [IsAuthenticated(), IsSameOrganization()]
         return super().get_permissions()
+
+    def perform_destroy(self, instance):
+        if Book.objects.filter(publisher=instance).exists():
+            raise ConflictError("Books in the catalog name this publisher.", code="in_use")
+        super().perform_destroy(instance)
 
 
 @extend_schema_view(
@@ -114,6 +131,11 @@ class BookViewSet(OrganizationScopedViewSet):
             return [IsAuthenticated(), IsSameOrganization()]
         return super().get_permissions()
 
+    def perform_destroy(self, instance):
+        if Copy.objects.filter(book=instance).exists() or Reservation.objects.filter(book=instance).exists():
+            raise ConflictError("This book has copies or reservations.", code="in_use")
+        super().perform_destroy(instance)
+
 
 @extend_schema_view(
     list=extend_schema(tags=[TAG]), retrieve=extend_schema(tags=[TAG]), create=extend_schema(tags=[TAG]),
@@ -126,6 +148,11 @@ class ShelfViewSet(CampusScopedViewSet):
     filterset_fields = ["campus"]
     required_permissions = {"list": [MANAGE], "retrieve": [MANAGE], "create": [MANAGE], "update": [MANAGE],
                             "partial_update": [MANAGE], "destroy": [MANAGE]}
+
+    def perform_destroy(self, instance):
+        if Copy.objects.filter(shelf=instance).exists():
+            raise ConflictError("Copies are on this shelf; move them first.", code="in_use")
+        super().perform_destroy(instance)
 
 
 @extend_schema_view(
@@ -146,6 +173,13 @@ class CopyViewSet(CampusScopedViewSet):
         if self.action in ("list", "retrieve"):
             return [IsAuthenticated(), IsSameOrganization()]
         return super().get_permissions()
+
+    def perform_destroy(self, instance):
+        # Its loans, fines and reservations would point at a copy nobody can
+        # see. Withdrawing takes it out of circulation and keeps the history.
+        if Issue.objects.filter(copy=instance).exists() or Reservation.objects.filter(copy=instance).exists():
+            raise ConflictError("This copy has been lent or held; withdraw it instead.", code="in_use")
+        super().perform_destroy(instance)
 
     def create(self, request, *args, **kwargs):
         serializer = CopySerializer(data=request.data, context=self.get_serializer_context())
@@ -352,6 +386,11 @@ class FineViewSet(OrganizationScopedViewSet):
         if self.action in ("list", "retrieve", "me"):
             return [IsAuthenticated(), IsSameOrganization()]
         return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        # Fines are raised by returns only. POST is here for pay/waive; this
+        # stops a superuser (who skips the permission check) reaching create.
+        raise MethodNotAllowed("POST")
 
     def get_queryset(self):
         qs = super().get_queryset()

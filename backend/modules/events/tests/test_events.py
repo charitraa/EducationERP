@@ -90,6 +90,17 @@ class LifecycleTests(EventTestCase):
         self.assertError(self.client.post(f"{EVENTS}{self.event.pk}/cancel/", {"reason": "y"}), 409,
                          "already_cancelled")
 
+    def test_a_draft_event_can_be_deleted(self):
+        self.assertEqual(self.client.delete(f"{EVENTS}{self.event.pk}/").status_code, 204)
+
+    def test_a_published_event_cannot_be_deleted(self):
+        # Its registrations, attendance and the points they earned would be
+        # left pointing at an event nobody can see.
+        self.client.post(f"{EVENTS}{self.event.pk}/publish/")
+        self.assertError(self.client.delete(f"{EVENTS}{self.event.pk}/"), 409, "not_draft")
+        self.client.post(f"{EVENTS}{self.event.pk}/cancel/", {"reason": "x"})
+        self.assertError(self.client.delete(f"{EVENTS}{self.event.pk}/"), 409, "not_draft")
+
     def test_a_cancelled_event_cannot_be_edited(self):
         self.client.post(f"{EVENTS}{self.event.pk}/publish/")
         self.client.post(f"{EVENTS}{self.event.pk}/cancel/", {"reason": "x"})

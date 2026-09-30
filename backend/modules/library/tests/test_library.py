@@ -16,6 +16,7 @@ from modules.library.models import (
     Issue,
     IssueStatus,
     Member,
+    Publisher,
     Reservation,
     ReservationStatus,
     Shelf,
@@ -91,6 +92,26 @@ class CatalogTests(LibraryTestCase):
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["accession_number"], "ACC-000002")
         self.assertEqual(r.data["status"], "available")
+
+    def test_a_copy_cannot_sit_on_another_campus_shelf(self):
+        far_shelf = Shelf.objects.create(organization=self.org, campus=self.other_campus, code="B1")
+        self.login(self.office)
+        r = self.client.post(f"{API}/library/copies/", {"book": self.book.pk, "campus": self.campus.pk,
+                                                          "shelf": far_shelf.pk})
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertIn("shelf", r.data["error"]["details"])
+        r = self.client.patch(f"{API}/library/copies/{self.copy.pk}/", {"shelf": far_shelf.pk})
+        self.assertEqual(r.status_code, 400, r.data)
+
+    def test_a_shelf_with_copies_cannot_move_campus(self):
+        grant(self.office, Role.objects.get(code="campus-admin", organization=None), campus=self.other_campus)
+        self.login(self.office)
+        r = self.client.patch(f"{API}/library/shelves/{self.shelf.pk}/", {"campus": self.other_campus.pk})
+        self.assertEqual(r.status_code, 400, r.data)
+        self.copy.shelf = None
+        self.copy.save(update_fields=["shelf"])
+        r = self.client.patch(f"{API}/library/shelves/{self.shelf.pk}/", {"campus": self.other_campus.pk})
+        self.assertEqual(r.status_code, 200, r.data)
 
     def test_a_shelf_code_is_unique_per_campus(self):
         self.login(self.office)
@@ -374,3 +395,40 @@ class FineTests(LibraryTestCase):
         self.login(self.ram_user)
         r = self.client.post(f"{API}/library/fines/{fine.pk}/pay/")
         self.assertEqual(r.status_code, 403)
+
+
+class DeleteInUseTests(LibraryTestCase):
+    """A soft delete skips the database's PROTECT, so each check lives in the view."""
+
+    def setUp(self):
+        super().setUp()
+        self.login(self.office)
+
+    def test_a_lent_copy_cannot_be_deleted_but_a_fresh_one_can(self):
+        services.issue_book(copy=self.copy, member=self.ram_member)
+        self.assertEqual(self.client.delete(f"{API}/library/copies/{self.copy.pk}/").status_code, 409)
+        fresh = Copy.objects.create(organization=self.org, book=self.book, campus=self.campus,
+                                    accession_number="ACC-000002")
+        self.assertEqual(self.client.delete(f"{API}/library/copies/{fresh.pk}/").status_code, 204)
+
+    def test_catalog_entries_in_use_cannot_be_deleted(self):
+        self.book.publisher = Publisher.objects.create(organization=self.org, name="Sajha")
+        self.book.save(update_fields=["publisher"])
+        for url in (f"books/{self.book.pk}", f"authors/{self.author.pk}", f"categories/{self.category.pk}",
+                    f"publishers/{self.book.publisher_id}", f"shelves/{self.shelf.pk}"):
+            r = self.client.delete(f"{API}/library/{url}/")
+            self.assertEqual((r.status_code, r.data["error"]["code"]), (409, "in_use"), url)
+
+    def test_accession_numbers_are_not_reused_after_a_delete(self):
+        first = self.client.post(f"{API}/library/copies/", {"book": self.book.pk, "campus": self.campus.pk}).data
+        self.client.delete(f"{API}/library/copies/{first['id']}/")
+        r = self.client.post(f"{API}/library/copies/", {"book": self.book.pk, "campus": self.campus.pk})
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["accession_number"], "ACC-000003")
+
+    def test_a_fine_cannot_be_created_directly_even_by_a_superuser(self):
+        from tests.factories import create_superuser
+
+        self.login(create_superuser())
+        r = self.client.post(f"{API}/library/fines/", {"organization": self.org.pk})
+        self.assertEqual(r.status_code, 405)

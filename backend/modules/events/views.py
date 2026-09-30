@@ -20,6 +20,7 @@ from .models import (
     Event,
     EventCategory,
     EventRegistration,
+    EventStatus,
     PointEntry,
     PointRule,
     RegistrationStatus,
@@ -167,6 +168,14 @@ class EventViewSet(OrganizationScopedViewSet):
     def perform_create(self, serializer):
         self._check_scope(serializer.validated_data.get("campus"))
         super().perform_create(serializer)
+
+    def perform_destroy(self, instance):
+        # Soft delete keeps the registrations, attendance, placings and the
+        # points they earned, but hides the event they belong to. Once it has
+        # been published, cancel it instead, as with an exam.
+        if instance.status != EventStatus.DRAFT:
+            raise ConflictError("Only an event being set up can be deleted. Cancel it instead.", code="not_draft")
+        super().perform_destroy(instance)
 
     def _event(self):
         return self.get_object()

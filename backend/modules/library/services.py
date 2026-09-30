@@ -41,7 +41,9 @@ def _next_number(organization_id: int, prefix: str, model) -> str:
 
     with transaction.atomic():
         Organization.objects.select_for_update().get(pk=organization_id)
-        count = model.objects.filter(organization_id=organization_id).count()
+        # Deleted rows too, or a number freed by a delete would be issued again
+        # while a later row still holds it.
+        count = model.all_objects.filter(organization_id=organization_id).count()
         return f"{prefix}{count + 1:06d}"
 
 
