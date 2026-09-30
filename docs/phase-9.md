@@ -65,6 +65,17 @@ campus's library), and the member is under their book limit
 way `communication.book_slot` protects a slot, so two simultaneous issues
 of the last copy can't both succeed.
 
+## Nothing in use is deleted
+
+DELETE is a soft delete, which never reaches the database's `PROTECT`, so
+the views check first (409 `in_use`), as Phase 10's inventory does: an
+author, category or publisher that a book uses, a book with copies or
+reservations, a shelf with copies on it, and a copy that has ever been lent
+or held. A copy leaving the library is **withdrawn** instead, which keeps its
+history. A copy's shelf must be at the copy's campus, and a shelf can't move
+campus while copies are on it. Accession and member numbers count deleted
+rows too, so a number is never issued twice.
+
 ## Fines: raised from an issue, never edited once settled
 
 A **Fine** always traces back to one `Issue` — overdue (rate × days late),

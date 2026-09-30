@@ -66,9 +66,12 @@ as a `fine` or a plain `adjustment` (`POST /invoices/{id}/add-item/`).
    /fee-structures/{id}/generate-invoices/` bills every student currently
    placed in a matching class, for one term — already-invoiced students are
    skipped, so running it again only bills whoever is new (a late admission,
-   a transfer in). One-time items go through
-   `generate-one-time-invoice` instead, refused a second time for the same
-   student and structure.
+   a transfer in). "Currently" is today, kept inside the term: billing ahead
+   of the term uses its first day, billing after it its last. One-time items
+   go through `generate-one-time-invoice` instead, refused a second time for
+   the same student and structure, and refused (`not_placed`) unless the
+   student is in, or placed ahead into, a class of the structure's program,
+   level and year.
 2. **Ad-hoc lines** (a discount, a fine, a correction) can be added while
    it's `issued`; a line can't take the total below what's already been paid
    — refund first.

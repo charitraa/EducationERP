@@ -44,8 +44,11 @@ register for a shared event, but only an organization-wide role can create
 one (`EventViewSet._check_scope`, the same rule `CalendarEventViewSet`
 already applies).
 
-It moves `draft → published → cancelled`. Registration only opens once
-published, and follows one of three modes set per event:
+It moves `draft → published → cancelled`. Only a draft can be deleted
+(409 `not_draft` otherwise): a published event's registrations,
+attendance and the points it earned stay with it, so it is cancelled
+instead, as an exam is. Registration only opens once published, and
+follows one of three modes set per event:
 
 | Mode | What happens |
 |---|---|
