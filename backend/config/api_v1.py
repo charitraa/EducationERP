@@ -37,4 +37,7 @@ urlpatterns = [
     path("", include("modules.library.urls")),
     # Phase 10
     path("", include("modules.inventory.urls")),
+    # Phase 11
+    path("", include("modules.hr.urls")),
+    path("", include("modules.payroll.urls")),
 ]

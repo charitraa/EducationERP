@@ -4,7 +4,7 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 10 complete.** Identity (Phase 1), the student foundation
+**Status: Phase 11 complete.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
 academic years, sections, teaching assignments, student placement), the
 weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
@@ -14,9 +14,11 @@ fee structures, invoices, scholarships, payments, refunds), events
 (Phase 7: registration, attendance, participation, points, achievements,
 badges, titles), communication (Phase 8: notices, the central notification
 service, messaging, appointments, support tickets), the library
-(Phase 9: catalog, circulation, reservations, fines) and inventory
+(Phase 9: catalog, circulation, reservations, fines), inventory
 (Phase 10: stores, stock ledger, purchasing, assets, maintenance, disposal)
-are built and tested. Next is Phase 11, HR and payroll — see
+and HR and payroll (Phase 11: contracts, leave with quotas and approval,
+salary structures, tax slabs, monthly payroll runs and payslips) are built
+and tested. Next is Phase 12, hostel and transport — see
 [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
@@ -273,6 +275,32 @@ Details: [`docs/phase-9.md`](docs/phase-9.md).
 - **Nothing in use can be deleted** (409 `in_use`); deactivate it instead.
 
 Details: [`docs/phase-10.md`](docs/phase-10.md).
+
+---
+
+## What Phase 11 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Employment | `Position`, `Contract`, `EmployeeProfile`, `StaffDocument` | Extends Phase 2's `StaffMember`: contracts as history (end, then add), PAN/bank/tax status, documents with expiry |
+| Leave | `FiscalYear`, `LeaveType`, `LeaveBalance`, `LeaveRequest` | Yearly quotas (pro-rated for joiners), carry-forward, working days only; apply → approve/reject → cancel |
+| Pay | `PayComponent`, `SalaryStructure`, `StaffSalary` | Grades of basic + allowances/deductions (fixed or % of basic), assigned from a date with per-person overrides |
+| Tax | `TaxScheme`, `TaxSlab` | Per-organization yearly slabs for single/couple filers, rebate for women, cap on pre-tax PF/CIT/SSF |
+| Payroll | `PayrollRun`, `Payslip`, `PayrollAdjustment` | A campus's month computed from salary, leave and attendance (unpaid days, overtime); draft → approved (locked) → paid |
+
+- **Reuses what exists.** Departments are `academics.Department`, holidays
+  are the calendar's closures, attendance is Phase 4's staff days. Approved
+  leave is written there through the attendance service.
+- **Payroll reads, never writes, HR and attendance**, as claude.md asks.
+- **Nothing about one country is hardcoded.** Nepal's slabs, the rebate for
+  women and the PF/CIT cap are data. One-off pay (a bonus, arrears,
+  overtime) is taxed at the marginal rate instead of being projected ×12.
+- **Corrections are new rows.** An approved payslip is never edited; an
+  adjustment that `corrects` it lands on the next one.
+- **Salaries are sensitive.** `campus-admin` gets HR but no payroll; an
+  organization grants payroll through its own role.
+
+Details: [`docs/phase-11.md`](docs/phase-11.md).
 
 ---
 
@@ -896,6 +924,16 @@ GET    /api/v1/inventory/assets/  assets/me/                           POST regi
 GET    /api/v1/inventory/asset-assignments/  disposals/                read-only history
 GET    /api/v1/inventory/maintenance/                                  POST schedules; {id}/start/  complete/  cancel/
 
+GET    /api/v1/hr/positions/  fiscal-years/  leave-types/              CRUD (HR); leave types readable by all
+GET    /api/v1/hr/contracts/  profiles/  documents/  (+ me/)           CRUD (HR); POST contracts/{id}/end/
+GET    /api/v1/hr/leave-balances/  leave-balances/me/                  POST open/ ; POST {id}/adjust/
+GET    /api/v1/hr/leave-requests/  pending/  me/                       POST me/ applies; {id}/approve/  reject/  cancel/
+
+GET    /api/v1/payroll/settings/  components/  structures/  tax-schemes/   CRUD (accounts)
+GET    /api/v1/payroll/staff-salaries/                                 POST assigns from a date
+GET    /api/v1/payroll/runs/                                           POST; {id}/compute/  approve/  mark-paid/  cancel/  bank-sheet/
+GET    /api/v1/payroll/payslips/  payslips/me/  adjustments/           POST payslips/{id}/set-overtime/
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -942,8 +980,12 @@ backend/
 │   ├── support/       SupportTicket, TicketComment
 │   ├── library/       Author, Category, Publisher, Book, Shelf, Copy, Member,
 │   │                  Issue, Fine, Reservation
-│   └── inventory/     Item, Store, StockLevel, StockMovement, PurchaseOrder,
-│                      Asset, AssetAssignment, MaintenanceRecord, Disposal
+│   ├── inventory/     Item, Store, StockLevel, StockMovement, PurchaseOrder,
+│   │                  Asset, AssetAssignment, MaintenanceRecord, Disposal
+│   ├── hr/            Position, Contract, EmployeeProfile, StaffDocument,
+│   │                  FiscalYear, LeaveType, LeaveBalance, LeaveRequest
+│   └── payroll/       PayComponent, SalaryStructure, StaffSalary, TaxScheme,
+│                      PayrollRun, Payslip, PayrollAdjustment
 ├── integrations/
 │   ├── biometric/     ZKTeco and generic device adapters (Phase 4)
 │   ├── email/  sms/  push/  console-logging stubs; notifications.services.notify
@@ -1012,7 +1054,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1 to 10 are done. The order below is the **dependency order**: each
+Phases 1 to 11 are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -1029,7 +1071,7 @@ placeholders.
 | ~~8~~ | Communication: notices, notifications, support tickets | 2 |
 | ~~9~~ | Library | 2 |
 | ~~10~~ | Inventory | 2 |
-| 11 | HR and payroll (extends `StaffMember`) | 2 |
+| ~~11~~ | HR and payroll (extends `StaffMember`) | 2 |
 | 12 | Hostel and transport | 2, 6 |
 | 13 | Applications (public admission forms and other workflows) | 2 |
 | 14 | Alumni and careers (uses the graduated status) | 2 |
@@ -1038,5 +1080,5 @@ See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
 [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),
 [`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md),
 [`docs/phase-6.md`](docs/phase-6.md), [`docs/phase-7.md`](docs/phase-7.md),
-[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md) and [`docs/phase-10.md`](docs/phase-10.md) for the data model and the
+[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md), [`docs/phase-10.md`](docs/phase-10.md) and [`docs/phase-11.md`](docs/phase-11.md) for the data model and the
 conventions every module follows.

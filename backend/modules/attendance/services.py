@@ -565,6 +565,13 @@ def clear_staff_day_override(*, staff_day, by=None) -> StaffAttendanceDay | None
     return rebuild_staff_day(staff, day)
 
 
+DEFAULT_WEEKDAYS = [7, 1, 2, 3, 4, 5]  # Sunday–Friday
+
+
+def scheduled_weekdays(schedule) -> list[int]:
+    return schedule.weekdays if schedule is not None and schedule.weekdays else DEFAULT_WEEKDAYS
+
+
 def works_on(staff, day: Date, schedule=None) -> bool:
     """Is ``day`` one of ``staff``'s working days? Their schedule's weekdays
     (Sunday–Friday when they have none), inside their employment. The
@@ -573,8 +580,7 @@ def works_on(staff, day: Date, schedule=None) -> bool:
         return False
     if staff.left_on and day >= staff.left_on:
         return False
-    weekdays = schedule.weekdays if schedule is not None and schedule.weekdays else [7, 1, 2, 3, 4, 5]
-    return day.isoweekday() in weekdays
+    return day.isoweekday() in scheduled_weekdays(schedule)
 
 
 def staff_expected_on(staff, day: Date) -> bool:

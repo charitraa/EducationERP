@@ -68,6 +68,29 @@ from modules.inventory.models import (
     Store,
     Supplier,
 )
+from modules.hr.models import (
+    Contract,
+    EmployeeProfile,
+    FiscalYear,
+    LeaveBalance,
+    LeaveRequest,
+    LeaveType,
+    Position,
+    StaffDocument,
+)
+from modules.payroll.models import (
+    PayComponent,
+    PayrollAdjustment,
+    PayrollRun,
+    PayrollSettings,
+    Payslip,
+    SalaryStructure,
+    SalaryStructureLine,
+    StaffSalary,
+    StaffSalaryLine,
+    TaxScheme,
+    TaxSlab,
+)
 from modules.library.models import Author, Book, Category, Copy, Fine, Issue, Member, Publisher, Reservation, Shelf
 from modules.finance import services as finance_services
 from modules.finance.models import (
@@ -189,6 +212,9 @@ QUERY_PARAMS = {
     "to_store": "inventory_store", "supplier": "inventory_supplier", "asset": "inventory_asset",
     "purchase_line": "inventory_po_line", "stock_issue": "inventory_stock_issue",
     "transfer": "inventory_transfer",
+    "position": "hr_position", "leave_type": "hr_leave_type", "fiscal_year": "hr_fiscal_year",
+    "structure": "payroll_structure", "run": "payroll_run", "payslip": "payroll_payslip",
+    "corrects": "payroll_payslip",
 }
 
 
@@ -411,7 +437,57 @@ def build_tenant(tag):
     disposal = Disposal.objects.create(organization=org, asset=old_asset, method="scrapped",
                                        disposed_on=timezone.localdate(), reason=f"{tag} disposal")
 
+    # Phase 11 — HR and payroll
+    position = Position.objects.create(organization=org, code=f"{tag}-lect", name=f"{tag} Lecturer")
+    contract = Contract.objects.create(organization=org, staff=staff, kind="permanent", position=position,
+                                       department=department, start_date=date(2020, 1, 1),
+                                       reference=f"{tag}-appointment")
+    profile = EmployeeProfile.objects.create(organization=org, staff=staff, pan_number=f"{tag}-pan",
+                                             bank_account_name=f"{tag} account")
+    document = StaffDocument.objects.create(organization=org, staff=staff, kind="cv", title=f"{tag} CV")
+    fiscal_year = FiscalYear.objects.create(organization=org, name=f"{tag} FY",
+                                            start_date=date.today() - timedelta(days=100),
+                                            end_date=date.today() + timedelta(days=200))
+    leave_type = LeaveType.objects.create(organization=org, code=f"{tag}-casual", name=f"{tag} Casual",
+                                          annual_quota=12)
+    leave_balance = LeaveBalance.objects.create(organization=org, staff=staff, leave_type=leave_type,
+                                                fiscal_year=fiscal_year, entitled=12)
+    leave_request = LeaveRequest.objects.create(
+        organization=org, staff=staff, leave_type=leave_type, fiscal_year=fiscal_year,
+        start_date=date.today() + timedelta(days=7), end_date=date.today() + timedelta(days=7), days=1,
+        reason=f"{tag} leave")
+    payroll_settings = PayrollSettings.objects.create(organization=org)
+    pay_component = PayComponent.objects.create(organization=org, code=f"{tag}-da", name=f"{tag} Allowance",
+                                                kind="earning")
+    salary_structure = SalaryStructure.objects.create(organization=org, code=f"{tag}-grade", name=f"{tag} Grade",
+                                                      basic=10000)
+    SalaryStructureLine.objects.create(structure=salary_structure, component=pay_component, value=100)
+    old_salary = StaffSalary.objects.create(organization=org, staff=staff, structure=salary_structure,
+                                            effective_from=date(2020, 1, 1), effective_to=date(2020, 12, 31),
+                                            note=f"{tag} old salary")
+    staff_salary = StaffSalary.objects.create(organization=org, staff=staff, structure=salary_structure,
+                                              effective_from=date(2021, 1, 1), note=f"{tag} salary")
+    StaffSalaryLine.objects.create(salary=staff_salary, component=pay_component, value=200)
+    tax_scheme = TaxScheme.objects.create(organization=org, fiscal_year=fiscal_year, tax_status="single",
+                                          name=f"{tag} Tax")
+    TaxSlab.objects.create(scheme=tax_scheme, sequence=1, upto=None, rate=1)
+    payroll_run = PayrollRun.objects.create(organization=org, campus=campus, name=f"{tag} Run",
+                                            period_start=date(2020, 1, 1), period_end=date(2020, 1, 30),
+                                            computed_at=timezone.now())
+    payslip = Payslip.objects.create(organization=org, run=payroll_run, staff=staff, salary=old_salary,
+                                     number=f"{tag}-PS-1", basic=10000, basis_days=26, working_days=26,
+                                     tax_scheme=tax_scheme)
+    payroll_adjustment = PayrollAdjustment.objects.create(organization=org, staff=staff, kind="earning",
+                                                          amount=100, description=f"{tag} bonus")
+
     return {
+        "hr_position": position, "hr_contract": contract, "hr_profile": profile, "hr_document": document,
+        "hr_fiscal_year": fiscal_year, "hr_leave_type": leave_type, "hr_leave_balance": leave_balance,
+        "hr_leave_request": leave_request, "payroll_settings": payroll_settings,
+        "payroll_component": pay_component, "payroll_structure": salary_structure,
+        # The salary no payslip used comes first, so the PATCH sweep edits one it may.
+        "payroll_salary": staff_salary, "payroll_old_salary": old_salary, "payroll_tax_scheme": tax_scheme,
+        "payroll_run": payroll_run, "payroll_payslip": payslip, "payroll_adjustment": payroll_adjustment,
         "grade_scale": scale, "exam_type": exam_type, "exam": exam, "exam_subject": paper,
         "exam_component": component, "exam_room": exam_room, "seat_allocation": seat,
         "invigilation": invigilation, "admit_card": admit_card, "mark_sheet": sheet, "mark": mark,
@@ -731,6 +807,28 @@ ACTION_ATTACKS.update({
     ],
 })
 
+ACTION_ATTACKS.update({
+    # Phase 11: leave requests, balances and runs go through plain input serializers.
+    ("LeaveRequestViewSet", "create"): [
+        lambda a, b: (None, {"staff": b["staff"].pk, "leave_type": a["hr_leave_type"].pk,
+                             "start_date": _future(), "end_date": _future()}),
+        lambda a, b: (None, {"staff": a["staff"].pk, "leave_type": b["hr_leave_type"].pk,
+                             "start_date": _future(), "end_date": _future()}),
+    ],
+    ("LeaveRequestViewSet", "me"): [
+        lambda a, b: (None, {"leave_type": b["hr_leave_type"].pk, "start_date": _future(),
+                             "end_date": _future()}),
+    ],
+    ("LeaveBalanceViewSet", "open"): [
+        lambda a, b: (None, {"fiscal_year": b["hr_fiscal_year"].pk}),
+        lambda a, b: (None, {"fiscal_year": a["hr_fiscal_year"].pk, "campus": b["campus"].pk}),
+    ],
+    ("PayrollRunViewSet", "create"): [
+        lambda a, b: (None, {"campus": b["campus"].pk, "name": "x", "period_start": _future(),
+                             "period_end": _future()}),
+    ],
+})
+
 # Write actions whose body names no other record, so the detail sweep (a
 # foreign pk in the URL) is all there is to attack.
 NO_RECORD_INPUT = {
@@ -801,6 +899,16 @@ NO_RECORD_INPUT = {
     ("MaintenanceViewSet", "start"),
     ("MaintenanceViewSet", "complete"),
     ("MaintenanceViewSet", "cancel"),
+    ("ContractViewSet", "end"),
+    ("LeaveBalanceViewSet", "adjust"),
+    ("LeaveRequestViewSet", "approve"),
+    ("LeaveRequestViewSet", "reject"),
+    ("LeaveRequestViewSet", "cancel"),
+    ("PayrollRunViewSet", "compute"),
+    ("PayrollRunViewSet", "approve"),
+    ("PayrollRunViewSet", "mark_paid"),
+    ("PayrollRunViewSet", "cancel"),
+    ("PayslipViewSet", "set_overtime"),
 }
 
 # Collections where an empty request legitimately returns nothing for the
@@ -815,9 +923,10 @@ LIST_NEEDS_INPUT = {"ReportCardViewSet", "NotificationViewSet", "MessageThreadVi
 # to smuggle. Ones that do carry ids are attacked by hand (NESTED_ATTACKS).
 NESTED_WITHOUT_IDS = {
     ("GradeScaleSerializer", "bands"), ("GradeScaleSerializer", "divisions"),
-    ("ExamSubjectSerializer", "components"),
+    ("ExamSubjectSerializer", "components"), ("TaxSchemeSerializer", "slabs"),
 }
-NESTED_WITH_IDS = {("ResultPlanSerializer", "items"), ("FeeStructureSerializer", "items")}
+NESTED_WITH_IDS = {("ResultPlanSerializer", "items"), ("FeeStructureSerializer", "items"),
+                   ("SalaryStructureSerializer", "lines"), ("StaffSalarySerializer", "lines")}
 
 
 # ---------------------------------------------------------------------------
@@ -1126,3 +1235,25 @@ class NestedIdTests(TenantSweepTestCase):
         response, problems = self.attack("patch", route.url() + f"{structure.pk}/", {"items": [
             {"category": b["fee_category"].pk, "amount": "10", "frequency": "per_term"}]})
         self.assert_held("PATCH fee-structures items=<org B category>", response, problems, {400})
+
+    def test_a_salary_cannot_use_another_organizations_component(self):
+        a, b = self.a, self.b
+        route = next(r for r in self.routes if r.view.__name__ == "SalaryStructureViewSet" and not r.is_detail)
+        lines = [{"component": b["payroll_component"].pk, "value": "10"}]
+        response, problems = self.attack("post", route.url(), {"code": "nested", "name": "Nested", "basic": "1",
+                                                               "lines": lines})
+        self.assert_held("POST structures lines=<org B component>", response, problems, {400})
+        self.assertIn("lines", response.data["error"]["details"])
+        structure = a["payroll_structure"]
+        response, problems = self.attack("patch", route.url() + f"{structure.pk}/", {"lines": lines})
+        self.assert_held("PATCH structures lines=<org B component>", response, problems, {400})
+
+        route = next(r for r in self.routes if r.view.__name__ == "StaffSalaryViewSet" and not r.is_detail)
+        response, problems = self.attack("post", route.url(), {
+            "staff": a["staff"].pk, "structure": a["payroll_structure"].pk, "effective_from": _future(),
+            "lines": lines})
+        self.assert_held("POST staff-salaries lines=<org B component>", response, problems, {400})
+        self.assertIn("lines", response.data["error"]["details"])
+        salary = a["payroll_salary"]
+        response, problems = self.attack("patch", route.url() + f"{salary.pk}/", {"lines": lines})
+        self.assert_held("PATCH staff-salaries lines=<org B component>", response, problems, {400})

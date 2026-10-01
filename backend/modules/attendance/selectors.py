@@ -23,7 +23,7 @@ from .models import (
     AttendanceStatus,
     StaffAttendanceDay,
 )
-from .services import org_today, schedule_for, school_day_problem, works_on
+from .services import org_today, schedule_for, scheduled_weekdays, school_day_problem, works_on
 
 
 def summarize(counts: dict) -> dict:
@@ -233,3 +233,35 @@ def staff_report(staff_members, start: Date, end: Date) -> list[dict]:
             "average_worked_minutes": round(sum(worked) / len(worked)) if worked else None,
         })
     return result
+
+
+def staff_days(staff, start: Date, end: Date) -> dict:
+    """``staff``'s attendance days in [start, end], by date."""
+    return {row.date: row for row in StaffAttendanceDay.objects.filter(staff=staff, date__gte=start,
+                                                                       date__lte=end)}
+
+
+def staff_working_days(staff, start: Date, end: Date, *, employed_only: bool = True) -> list[Date]:
+    """The days in [start, end] ``staff`` is expected at work: their
+    schedule's weekdays, the campus not closed, and (unless
+    ``employed_only`` is off) inside their employment."""
+    closed = closed_days(staff.campus, start, end)
+    schedule = schedule_for(staff)
+    weekdays = scheduled_weekdays(schedule)
+    days, day = [], start
+    while day <= end:
+        if day not in closed and (works_on(staff, day, schedule) if employed_only
+                                  else day.isoweekday() in weekdays):
+            days.append(day)
+        day += timedelta(days=1)
+    return days
+
+
+def scheduled_minutes(staff) -> int | None:
+    """Length of ``staff``'s working day by their schedule, if they have one."""
+    schedule = schedule_for(staff)
+    if schedule is None:
+        return None
+    start = schedule.start_time.hour * 60 + schedule.start_time.minute
+    end = schedule.end_time.hour * 60 + schedule.end_time.minute
+    return end - start

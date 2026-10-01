@@ -61,31 +61,24 @@ CORE_APPS = [
 
 # Business modules, in dependency order: each may use the ones above it.
 MODULE_APPS: list[str] = [
-    # Phase 2 — student foundation
     "modules.students",
     "modules.parents",
     "modules.staff",
     "modules.admissions",
-    # Phase 3 — academics and the timetable
     "modules.academics",
     "modules.timetable",
-    # Phase 4 — attendance
     "modules.attendance",
-    # Phase 5 — examinations
     "modules.examinations",
-    # Phase 6 — finance
     "modules.finance",
-    # Phase 7 — events
     "modules.events",
-    # Phase 8 — communication
     "modules.notifications",
     "modules.notices",
     "modules.communication",
     "modules.support",
-    # Phase 9 — library
     "modules.library",
-    # Phase 10 — inventory
     "modules.inventory",
+    "modules.hr",
+    "modules.payroll",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -302,6 +295,14 @@ SPECTACULAR_SETTINGS = {
         "PointSourceEnum": "modules.events.models.PointSource",
         "AwardKindEnum": "modules.events.models.AwardKind",
         "ThresholdKindEnum": "modules.events.models.ThresholdKind",
+        "ContractKindEnum": "modules.hr.models.ContractKind",
+        "StaffDocumentKindEnum": "modules.hr.models.DocumentKind",
+        "LeaveStatusEnum": "modules.hr.models.LeaveStatus",
+        "TaxStatusEnum": "modules.hr.models.TaxStatus",
+        "PayComponentKindEnum": "modules.payroll.models.ComponentKind",
+        "PayslipLineKindEnum": "modules.payroll.models.LineKind",
+        "PayslipLineSourceEnum": "modules.payroll.models.LineSource",
+        "PayrollRunStatusEnum": "modules.payroll.models.RunStatus",
     },
 }
 
