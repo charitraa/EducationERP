@@ -202,7 +202,7 @@ class InvoiceFilter(filters.FilterSet):
 
     class Meta:
         model = Invoice
-        fields = ["student", "campus", "term", "academic_year", "status", "fee_structure"]
+        fields = ["student", "campus", "term", "academic_year", "status", "fee_structure", "source"]
 
 
 @_schema("invoice", "list", "retrieve")

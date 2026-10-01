@@ -12,32 +12,24 @@ urlpatterns = [
     path("", include("core.accounts.urls")),
     path("", include("core.permissions.urls")),
     path("", include("core.audit.urls")),
-    # Phase 2
     path("", include("modules.students.urls")),
     path("", include("modules.parents.urls")),
     path("", include("modules.staff.urls")),
     path("", include("modules.admissions.urls")),
-    # Phase 3
     path("", include("modules.academics.urls")),
     path("", include("modules.timetable.urls")),
-    # Phase 4
     path("", include("modules.attendance.urls")),
-    # Phase 5
     path("", include("modules.examinations.urls")),
-    # Phase 6
     path("", include("modules.finance.urls")),
-    # Phase 7
     path("", include("modules.events.urls")),
-    # Phase 8
     path("", include("modules.notifications.urls")),
     path("", include("modules.notices.urls")),
     path("", include("modules.communication.urls")),
     path("", include("modules.support.urls")),
-    # Phase 9
     path("", include("modules.library.urls")),
-    # Phase 10
     path("", include("modules.inventory.urls")),
-    # Phase 11
     path("", include("modules.hr.urls")),
     path("", include("modules.payroll.urls")),
+    path("", include("modules.hostel.urls")),
+    path("", include("modules.transport.urls")),
 ]

@@ -4,7 +4,7 @@ Views and serializers call these so a rule lives in one place.
 """
 from dataclasses import dataclass
 from datetime import date as Date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.db.models import Q
@@ -25,6 +25,7 @@ from .models import (
     Invoice,
     InvoiceItem,
     InvoiceItemKind,
+    InvoiceSource,
     InvoiceStatus,
     Payment,
     Receipt,
@@ -146,7 +147,8 @@ def generate_term_invoices(fee_structure: FeeStructure, term, *, by, section=Non
     on = min(max(timezone.localdate(), term.start_date), term.end_date)
     enrollments = (Enrollment.objects.on(on).filter(section__in=sections)
                   .select_related("student", "campus"))
-    already = set(Invoice.objects.filter(term=term, student_id__in=enrollments.values("student_id"))
+    already = set(Invoice.objects.filter(term=term, source=InvoiceSource.FEES,
+                                         student_id__in=enrollments.values("student_id"))
                  .exclude(status=InvoiceStatus.CANCELLED).values_list("student_id", flat=True))
 
     created = skipped = 0
@@ -216,6 +218,79 @@ def generate_one_time_invoice(fee_structure: FeeStructure, student, *, by, due_d
             InvoiceItem.objects.create(organization_id=invoice.organization_id, invoice=invoice, **line)
         invoice.total = sum(invoice.items.values_list("amount", flat=True), ZERO)
         invoice.save(update_fields=["total", "updated_at"])
+    return invoice
+
+
+def prorate(rate: Decimal, start: Date, end: Date, period_start: Date, period_end: Date) -> tuple[Decimal, Date, Date]:
+    """``rate`` for the share of the period that ``start``..``end`` covers
+    (all dates inclusive). A stay covering the whole period pays exactly
+    ``rate``. Returns the amount and the covered span."""
+    first, last = max(start, period_start), min(end, period_end)
+    if last < first:
+        return Decimal("0"), first, last
+    days, period_days = (last - first).days + 1, (period_end - period_start).days + 1
+    if days >= period_days:
+        return rate, first, last
+    return (rate * days / period_days).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), first, last
+
+
+@dataclass
+class ServiceCharge:
+    """One line another module bills through finance, e.g. a hostel room."""
+
+    category: object  # FeeCategory
+    description: str
+    amount: Decimal
+
+
+def generate_service_invoice(*, student, term, source: str, charges: list[ServiceCharge], by,
+                             due_date: Date | None = None) -> Invoice | None:
+    """A term invoice for another module's charges (hostel, transport),
+    separate from the student's tuition invoice. Returns ``None`` when this
+    source already billed the student for the term, so callers can rerun it.
+
+    Only scholarships aimed at one of the charged categories apply here; an
+    organization-wide tuition scholarship doesn't discount a bus fare.
+    """
+    if source == InvoiceSource.FEES:
+        raise ServiceError("Tuition invoices come from a fee structure.", code="wrong_source")
+    charges = [c for c in charges if c.amount > 0]
+    if not charges:
+        return None
+    on = min(max(timezone.localdate(), term.start_date), term.end_date)
+    enrollment = (Enrollment.objects.on(on).filter(student=student).select_related("campus").first()
+                  or Enrollment.objects.filter(student=student, started_on__lte=term.end_date)
+                  .filter(Q(ended_on__isnull=True) | Q(ended_on__gt=term.start_date))
+                  .select_related("campus").order_by("-started_on").first())
+    if enrollment is None:
+        raise ServiceError("This student isn't enrolled during the term.", code="not_enrolled")
+    with transaction.atomic():
+        # Locks the student's row so two concurrent runs can't both bill them.
+        type(student).objects.select_for_update().get(pk=student.pk)
+        if Invoice.objects.filter(term=term, student=student, source=source).exclude(
+                status=InvoiceStatus.CANCELLED).exists():
+            return None
+        issue_date = timezone.localdate()
+        invoice = Invoice.objects.create(
+            organization_id=student.organization_id, campus=enrollment.campus, student=student,
+            enrollment=enrollment, academic_year=term.academic_year, term=term, source=source,
+            invoice_number=_next_number(student.organization_id, "INV-", Invoice), status=InvoiceStatus.ISSUED,
+            issue_date=issue_date, due_date=due_date or (issue_date + timedelta(days=15)),
+        )
+        InvoiceItem.objects.bulk_create([
+            InvoiceItem(organization_id=invoice.organization_id, invoice=invoice, category=c.category,
+                        kind=InvoiceItemKind.FEE, description=c.description, amount=c.amount)
+            for c in charges
+        ])
+        category_totals = {}
+        for c in charges:
+            category_totals[c.category.pk] = category_totals.get(c.category.pk, ZERO) + c.amount
+        for line in _scholarship_lines(student, category_totals, issue_date, by=by):
+            if line["category_id"] in category_totals:
+                InvoiceItem.objects.create(organization_id=invoice.organization_id, invoice=invoice, **line)
+        invoice.total = sum(invoice.items.values_list("amount", flat=True), ZERO)
+        invoice.save(update_fields=["total", "updated_at"])
+        log(AuditLog.Action.CREATE, instance=invoice, module=source, actor=by)
     return invoice
 
 

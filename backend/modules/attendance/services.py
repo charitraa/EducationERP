@@ -43,8 +43,9 @@ MODULE = "attendance"
 # Helpers
 # ---------------------------------------------------------------------------
 def org_timezone(organization) -> ZoneInfo:
+    # The platform superuser has no organization: fall back to UTC.
     try:
-        return ZoneInfo(organization.timezone or "UTC")
+        return ZoneInfo(getattr(organization, "timezone", None) or "UTC")
     except (ZoneInfoNotFoundError, ValueError):
         return ZoneInfo("UTC")
 

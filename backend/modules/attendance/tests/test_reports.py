@@ -8,6 +8,7 @@ from tests.factories import (
     create_calendar_event,
     create_lesson_change,
     create_parent,
+    create_superuser,
     create_user,
     user_with_system_role,
 )
@@ -104,6 +105,14 @@ class RegisterTests(ReportTestCase):
 
         self.assertEqual(response.status_code, 400)
 
+
+    def test_the_platform_superuser_without_an_organization_does_not_crash(self):
+        # No organization means no timezone: "today" falls back to UTC instead of a 500.
+        self.login(create_superuser())
+
+        for path in ("reports/register/", "reports/defaulters/", "reports/missing/", "staff-days/me/"):
+            response = self.client.get(f"{API}/{path}")
+            self.assertLess(response.status_code, 500, path)
 
 class MissingTests(AttendanceTestCase):
     def setUp(self):

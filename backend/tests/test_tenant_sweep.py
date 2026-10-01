@@ -91,6 +91,12 @@ from modules.payroll.models import (
     TaxScheme,
     TaxSlab,
 )
+from modules.hostel.models import Allocation as HostelAllocation
+from modules.hostel.models import Bed, Building, Complaint, Floor, HostelRoom, RoomType
+from modules.transport.models import Assignment as RideAssignment
+from modules.transport.models import Driver, FuelLog, Route as BusRoute, Stop, Trip, TripRecord, Vehicle
+from modules.transport.models import Maintenance as VehicleMaintenance
+from modules.transport.models import VehicleDocument
 from modules.library.models import Author, Book, Category, Copy, Fine, Issue, Member, Publisher, Reservation, Shelf
 from modules.finance import services as finance_services
 from modules.finance.models import (
@@ -215,6 +221,12 @@ QUERY_PARAMS = {
     "position": "hr_position", "leave_type": "hr_leave_type", "fiscal_year": "hr_fiscal_year",
     "structure": "payroll_structure", "run": "payroll_run", "payslip": "payroll_payslip",
     "corrects": "payroll_payslip",
+    "building": "hostel_building", "floor": "hostel_floor", "room_type": "hostel_room_type",
+    "bed": "hostel_bed", "bed__room": "hostel_room", "bed__room__building": "hostel_building",
+    "room__building": "hostel_building",
+    "vehicle": "transport_vehicle", "driver": "transport_driver", "route": "transport_route",
+    "stop": "transport_stop", "trip": "transport_trip", "assignment": "transport_assignment",
+    "assignment__student": "student", "assignment__staff": "staff", "trip__route": "transport_route",
 }
 
 
@@ -480,7 +492,46 @@ def build_tenant(tag):
     payroll_adjustment = PayrollAdjustment.objects.create(organization=org, staff=staff, kind="earning",
                                                           amount=100, description=f"{tag} bonus")
 
+    # Phase 12 — hostel and transport
+    building = Building.objects.create(organization=org, campus=campus, code=f"{tag}-hall", name=f"{tag} Hall",
+                                       warden=staff)
+    floor = Floor.objects.create(organization=org, building=building, number=0, name=f"{tag} Ground")
+    room_type = RoomType.objects.create(organization=org, code=f"{tag}-double", name=f"{tag} Double",
+                                        fee_per_term=1000, fee_category=fee_category)
+    hostel_room = HostelRoom.objects.create(organization=org, building=building, floor=floor, number=f"{tag}-G01",
+                                            room_type=room_type)
+    bed = Bed.objects.create(organization=org, room=hostel_room, label="A")
+    bed2 = Bed.objects.create(organization=org, room=hostel_room, label="B")
+    hostel_allocation = HostelAllocation.objects.create(organization=org, bed=bed, student=student,
+                                                        start_date=date.today(), note=f"{tag} stay")
+    complaint = Complaint.objects.create(organization=org, building=building, room=hostel_room, raised_by=user,
+                                         title=f"{tag} fan broken")
+    vehicle = Vehicle.objects.create(organization=org, campus=campus, registration_number=f"{tag}-BA-1",
+                                     name=f"{tag} Bus", capacity=30)
+    vehicle_document = VehicleDocument.objects.create(organization=org, vehicle=vehicle, kind="insurance",
+                                                      number=f"{tag}-ins")
+    driver = Driver.objects.create(organization=org, staff=staff, license_number=f"{tag}-lic")
+    bus_route = BusRoute.objects.create(organization=org, campus=campus, code=f"{tag}-r1", name=f"{tag} Route",
+                                        vehicle=vehicle, driver=driver, fee_per_term=500, fee_category=fee_category)
+    stop = Stop.objects.create(organization=org, route=bus_route, sequence=1, name=f"{tag} Stop")
+    ride = RideAssignment.objects.create(organization=org, route=bus_route, stop=stop, student=student,
+                                         start_date=date.today())
+    trip = Trip.objects.create(organization=org, route=bus_route, date=date.today(), direction="pickup",
+                               vehicle=vehicle, driver=driver)
+    trip_record = TripRecord.objects.create(organization=org, trip=trip, assignment=ride, status="boarded")
+    vehicle_maintenance = VehicleMaintenance.objects.create(organization=org, vehicle=vehicle, kind="service",
+                                                            date=date.today(), description=f"{tag} service")
+    fuel_log = FuelLog.objects.create(organization=org, vehicle=vehicle, date=date.today(), litres=10, cost=1000,
+                                      note=f"{tag} fuel")
+
     return {
+        "hostel_building": building, "hostel_floor": floor, "hostel_room_type": room_type,
+        "hostel_room": hostel_room, "hostel_bed": bed, "hostel_bed2": bed2, "hostel_allocation": hostel_allocation,
+        "hostel_complaint": complaint,
+        "transport_vehicle": vehicle, "transport_document": vehicle_document, "transport_driver": driver,
+        "transport_route": bus_route, "transport_stop": stop, "transport_assignment": ride,
+        "transport_trip": trip, "transport_record": trip_record, "transport_maintenance": vehicle_maintenance,
+        "transport_fuel": fuel_log,
         "hr_position": position, "hr_contract": contract, "hr_profile": profile, "hr_document": document,
         "hr_fiscal_year": fiscal_year, "hr_leave_type": leave_type, "hr_leave_balance": leave_balance,
         "hr_leave_request": leave_request, "payroll_settings": payroll_settings,
@@ -829,6 +880,50 @@ ACTION_ATTACKS.update({
     ],
 })
 
+ACTION_ATTACKS.update({
+    # Phase 12: allocations, complaints, rider assignments and trips go through plain input serializers.
+    ("AllocationViewSet", "create"): [
+        lambda a, b: (None, {"bed": b["hostel_bed2"].pk, "student": a["student"].pk}),
+        lambda a, b: (None, {"bed": a["hostel_bed2"].pk, "student": b["student"].pk}),
+        lambda a, b: (None, {"bed": a["hostel_bed2"].pk, "staff": b["staff"].pk}),
+    ],
+    ("AllocationViewSet", "move"): [
+        lambda a, b: ("hostel_allocation", {"bed": b["hostel_bed2"].pk}),
+    ],
+    ("AllocationViewSet", "generate_invoices"): [
+        lambda a, b: (None, {"term": b["term"].pk}),
+        lambda a, b: (None, {"term": a["term"].pk, "building": b["hostel_building"].pk}),
+    ],
+    ("ComplaintViewSet", "create"): [
+        lambda a, b: (None, {"building": b["hostel_building"].pk, "title": "x"}),
+        lambda a, b: (None, {"building": a["hostel_building"].pk, "room": b["hostel_room"].pk, "title": "x"}),
+    ],
+    ("ComplaintViewSet", "assign"): [
+        lambda a, b: ("hostel_complaint", {"staff": b["staff"].pk}),
+    ],
+    ("AssignmentViewSet", "create"): [
+        lambda a, b: (None, {"route": b["transport_route"].pk, "stop": a["transport_stop"].pk,
+                             "staff": a["staff"].pk}),
+        lambda a, b: (None, {"route": a["transport_route"].pk, "stop": b["transport_stop"].pk,
+                             "staff": a["staff"].pk}),
+        lambda a, b: (None, {"route": a["transport_route"].pk, "stop": a["transport_stop"].pk,
+                             "student": b["student"].pk}),
+        lambda a, b: (None, {"route": a["transport_route"].pk, "stop": a["transport_stop"].pk,
+                             "staff": b["staff"].pk}),
+    ],
+    ("AssignmentViewSet", "generate_invoices"): [
+        lambda a, b: (None, {"term": b["term"].pk}),
+        lambda a, b: (None, {"term": a["term"].pk, "route": b["transport_route"].pk}),
+    ],
+    ("TripViewSet", "create"): [
+        lambda a, b: (None, {"route": b["transport_route"].pk, "direction": "drop"}),
+    ],
+    ("TripViewSet", "mark"): [
+        lambda a, b: ("transport_trip", {"entries": [{"assignment": b["transport_assignment"].pk,
+                                                      "status": "absent"}]}),
+    ],
+})
+
 # Write actions whose body names no other record, so the detail sweep (a
 # foreign pk in the URL) is all there is to attack.
 NO_RECORD_INPUT = {
@@ -909,6 +1004,15 @@ NO_RECORD_INPUT = {
     ("PayrollRunViewSet", "mark_paid"),
     ("PayrollRunViewSet", "cancel"),
     ("PayslipViewSet", "set_overtime"),
+    ("AllocationViewSet", "check_in"),
+    ("AllocationViewSet", "check_out"),
+    ("AllocationViewSet", "cancel"),
+    ("ComplaintViewSet", "resolve"),
+    ("ComplaintViewSet", "reject"),
+    # Resident's own complaint: the building and room come from their own bed.
+    ("ComplaintViewSet", "me"),
+    ("AssignmentViewSet", "end"),
+    ("TripViewSet", "complete"),
 }
 
 # Collections where an empty request legitimately returns nothing for the

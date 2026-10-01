@@ -192,6 +192,15 @@ class InvoiceStatus(models.TextChoices):
     CANCELLED = "cancelled", "Cancelled"
 
 
+class InvoiceSource(models.TextChoices):
+    """Which part of the school billed it. Each source invoices a student at
+    most once per term, independently of the others."""
+
+    FEES = "fees", "Tuition and fees"
+    HOSTEL = "hostel", "Hostel"
+    TRANSPORT = "transport", "Transport"
+
+
 class Invoice(TimeStampedModel):
     """One bill: a student's charges for one term (or a one-time fee),
     with what's been paid against it.
@@ -210,6 +219,8 @@ class Invoice(TimeStampedModel):
     academic_year = models.ForeignKey("academics.AcademicYear", on_delete=models.PROTECT, related_name="invoices")
     term = models.ForeignKey("academics.Term", null=True, blank=True, on_delete=models.SET_NULL,
                              related_name="invoices", help_text="Empty: a one-time invoice, e.g. admission.")
+    source = models.CharField(max_length=10, choices=InvoiceSource.choices, default=InvoiceSource.FEES,
+                              db_index=True)
     invoice_number = models.CharField(max_length=40)
     status = models.CharField(max_length=10, choices=InvoiceStatus.choices, default=InvoiceStatus.ISSUED,
                               db_index=True)

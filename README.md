@@ -4,7 +4,7 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 11 complete.** Identity (Phase 1), the student foundation
+**Status: Phase 12 complete.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
 academic years, sections, teaching assignments, student placement), the
 weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
@@ -16,9 +16,11 @@ badges, titles), communication (Phase 8: notices, the central notification
 service, messaging, appointments, support tickets), the library
 (Phase 9: catalog, circulation, reservations, fines), inventory
 (Phase 10: stores, stock ledger, purchasing, assets, maintenance, disposal)
-and HR and payroll (Phase 11: contracts, leave with quotas and approval,
-salary structures, tax slabs, monthly payroll runs and payslips) are built
-and tested. Next is Phase 12, hostel and transport — see
+HR and payroll (Phase 11: contracts, leave with quotas and approval,
+salary structures, tax slabs, monthly payroll runs and payslips) and
+hostel and transport (Phase 12: rooms and beds, allocation and check-in,
+complaints, vehicles, routes and stops, riders, per-trip boarding, term
+fees) are built and tested. Next is Phase 13, applications — see
 [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
@@ -301,6 +303,31 @@ Details: [`docs/phase-10.md`](docs/phase-10.md).
   organization grants payroll through its own role.
 
 Details: [`docs/phase-11.md`](docs/phase-11.md).
+
+---
+
+## What Phase 12 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Hostel register | `Building`, `Floor`, `HostelRoom`, `Bed`, `RoomType` | Boys / girls / mixed buildings per campus; per-bed, per-term fee on the room type |
+| Stays | `Allocation` | One bed per person (student or staff): reserve → check in → check out, cancel, room move; history, never edited |
+| Complaints | `Complaint` | Residents file from their own bed; warden notified; assign → resolve / reject |
+| Fleet | `Vehicle`, `VehicleDocument`, `Driver`, `Maintenance`, `FuelLog` | Seats, papers with expiry, crew with licences, service and fuel logs |
+| Routes and riders | `Route`, `Stop`, `Assignment` | Ordered stops with times and optional own fee; riders both ways or one way; refused when the bus is full |
+| Trips | `Trip`, `TripRecord` | The route's own crew opens and marks each pickup / drop; parents told about an absence; office corrects after completion |
+
+- **Fees are their own invoices.** Each term, hostel and transport bill
+  through finance (`Invoice.source` = `hostel` / `transport`), prorated by
+  days, safe to rerun, never blocking tuition. Only scholarships aimed at
+  that fee category apply.
+- **No double booking.** Bed and route rows are locked while allocating,
+  with partial unique constraints behind them. Concurrent requests for the
+  last bed or seat were checked live.
+- **Bus attendance is separate** from Phase 4's class attendance, as
+  claude.md asks of events.
+
+Details: [`docs/phase-12.md`](docs/phase-12.md).
 
 ---
 
@@ -934,6 +961,18 @@ GET    /api/v1/payroll/staff-salaries/                                 POST assi
 GET    /api/v1/payroll/runs/                                           POST; {id}/compute/  approve/  mark-paid/  cancel/  bank-sheet/
 GET    /api/v1/payroll/payslips/  payslips/me/  adjustments/           POST payslips/{id}/set-overtime/
 
+GET    /api/v1/hostel/buildings/  floors/  room-types/  rooms/  beds/   CRUD (warden); ?available=true
+GET    /api/v1/hostel/allocations/  allocations/me/                    POST reserves; {id}/check-in/  check-out/  cancel/  move/
+POST   /api/v1/hostel/allocations/generate-invoices/                   the term's hostel invoices (also needs finance.manage)
+GET    /api/v1/hostel/complaints/  complaints/me/                      POST (office or me/); {id}/assign/  resolve/  reject/
+
+GET    /api/v1/transport/vehicles/  vehicle-documents/  drivers/       CRUD; ?expiring_within= / ?license_expiring_within=
+GET    /api/v1/transport/routes/  stops/  maintenance/  fuel-logs/     CRUD (transport office)
+GET    /api/v1/transport/assignments/  assignments/me/                 POST puts a rider on a route; {id}/end/
+POST   /api/v1/transport/assignments/generate-invoices/                the term's transport invoices (also needs finance.manage)
+GET    /api/v1/transport/trips/  trips/mine/                           POST opens (crew); {id}/mark/  complete/
+GET    /api/v1/transport/trip-records/  trip-records/me/               boarding history
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -984,8 +1023,12 @@ backend/
 │   │                  Asset, AssetAssignment, MaintenanceRecord, Disposal
 │   ├── hr/            Position, Contract, EmployeeProfile, StaffDocument,
 │   │                  FiscalYear, LeaveType, LeaveBalance, LeaveRequest
-│   └── payroll/       PayComponent, SalaryStructure, StaffSalary, TaxScheme,
-│                      PayrollRun, Payslip, PayrollAdjustment
+│   ├── payroll/       PayComponent, SalaryStructure, StaffSalary, TaxScheme,
+│   │                  PayrollRun, Payslip, PayrollAdjustment
+│   ├── hostel/        Building, Floor, RoomType, HostelRoom, Bed, Allocation,
+│   │                  Complaint
+│   └── transport/     Vehicle, VehicleDocument, Driver, Route, Stop, Assignment,
+│                      Trip, TripRecord, Maintenance, FuelLog
 ├── integrations/
 │   ├── biometric/     ZKTeco and generic device adapters (Phase 4)
 │   ├── email/  sms/  push/  console-logging stubs; notifications.services.notify
@@ -1054,7 +1097,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1 to 11 are done. The order below is the **dependency order**: each
+Phases 1 to 12 are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -1072,7 +1115,7 @@ placeholders.
 | ~~9~~ | Library | 2 |
 | ~~10~~ | Inventory | 2 |
 | ~~11~~ | HR and payroll (extends `StaffMember`) | 2 |
-| 12 | Hostel and transport | 2, 6 |
+| ~~12~~ | Hostel and transport | 2, 6 |
 | 13 | Applications (public admission forms and other workflows) | 2 |
 | 14 | Alumni and careers (uses the graduated status) | 2 |
 
@@ -1080,5 +1123,6 @@ See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
 [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),
 [`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md),
 [`docs/phase-6.md`](docs/phase-6.md), [`docs/phase-7.md`](docs/phase-7.md),
-[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md), [`docs/phase-10.md`](docs/phase-10.md) and [`docs/phase-11.md`](docs/phase-11.md) for the data model and the
+[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md), [`docs/phase-10.md`](docs/phase-10.md), [`docs/phase-11.md`](docs/phase-11.md) and
+[`docs/phase-12.md`](docs/phase-12.md) for the data model and the
 conventions every module follows.

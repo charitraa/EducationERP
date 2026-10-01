@@ -217,8 +217,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = ["id", "organization", "campus", "student", "student_name", "student_number", "enrollment",
-                  "fee_structure", "academic_year", "term", "term_name", "invoice_number", "status", "issue_date",
-                  "due_date", "total", "paid_amount", "balance", "is_paid", "is_overdue", "cancelled_at",
+                  "fee_structure", "academic_year", "term", "term_name", "source", "invoice_number", "status",
+                  "issue_date", "due_date", "total", "paid_amount", "balance", "is_paid", "is_overdue", "cancelled_at",
                   "cancelled_reason", "note", "items", "installments", "created_at", "updated_at"]
         read_only_fields = fields
 

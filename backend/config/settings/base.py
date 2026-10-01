@@ -79,6 +79,8 @@ MODULE_APPS: list[str] = [
     "modules.inventory",
     "modules.hr",
     "modules.payroll",
+    "modules.hostel",
+    "modules.transport",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -303,6 +305,22 @@ SPECTACULAR_SETTINGS = {
         "PayslipLineKindEnum": "modules.payroll.models.LineKind",
         "PayslipLineSourceEnum": "modules.payroll.models.LineSource",
         "PayrollRunStatusEnum": "modules.payroll.models.RunStatus",
+        # Phase 12 added other "gender" and "direction" fields; keep these names stable.
+        "GenderEnum": "core.common.choices.Gender",
+        "DirectionEnum": "modules.attendance.models.Punch.Direction",
+        "InvoiceSourceEnum": "modules.finance.models.InvoiceSource",
+        "BuildingGenderEnum": "modules.hostel.models.BuildingGender",
+        "AllocationStatusEnum": "modules.hostel.models.AllocationStatus",
+        "ComplaintCategoryEnum": "modules.hostel.models.ComplaintCategory",
+        "ComplaintStatusEnum": "modules.hostel.models.ComplaintStatus",
+        "VehicleKindEnum": "modules.transport.models.VehicleKind",
+        "VehicleDocumentKindEnum": "modules.transport.models.DocumentKind",
+        "CrewRoleEnum": "modules.transport.models.CrewRole",
+        "RideDirectionEnum": "modules.transport.models.Direction",
+        "TripDirectionEnum": "modules.transport.models.TripDirection",
+        "TripStatusEnum": "modules.transport.models.TripStatus",
+        "BoardingStatusEnum": "modules.transport.models.BoardingStatus",
+        "VehicleMaintenanceKindEnum": "modules.transport.models.MaintenanceKind",
     },
 }
 
