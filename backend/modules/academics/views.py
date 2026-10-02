@@ -256,7 +256,9 @@ class SectionViewSet(CampusAcademicsViewSet):
         today = timezone.localdate()
         in_class = (Q(enrollments__started_on__lte=today)
                     & (Q(enrollments__ended_on__isnull=True) | Q(enrollments__ended_on__gt=today)))
-        return super().get_queryset().annotate(student_count=Count("enrollments", filter=in_class))
+        # Explicit order: Django drops Meta.ordering from a GROUP BY query, which would page unstably.
+        return (super().get_queryset().annotate(student_count=Count("enrollments", filter=in_class))
+                .order_by(*Section._meta.ordering))
 
     @extend_schema(tags=["academics"], summary="Students currently in a section",
                    parameters=[OpenApiParameter("subject", int, description=(

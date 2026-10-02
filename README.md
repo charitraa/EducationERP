@@ -4,7 +4,7 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 12 complete.** Identity (Phase 1), the student foundation
+**Status: Phase 14 complete — every roadmap phase is built.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
 academic years, sections, teaching assignments, student placement), the
 weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
@@ -20,8 +20,13 @@ HR and payroll (Phase 11: contracts, leave with quotas and approval,
 salary structures, tax slabs, monthly payroll runs and payslips) and
 hostel and transport (Phase 12: rooms and beds, allocation and check-in,
 complaints, vehicles, routes and stops, riders, per-trip boarding, term
-fees) are built and tested. Next is Phase 13, applications — see
-[Roadmap](#roadmap).
+fees), applications (Phase 13: one approval engine for admission,
+leave, scholarship, hostel, transport, event and certificate requests,
+with public admission forms) and alumni and careers (Phase 14:
+graduation into alumni, self-service profiles, events, mentoring,
+donations, the school's own hiring from vacancy to contract, a job board,
+and private file uploads) are built and tested. What's next is the SaaS
+work — see [Roadmap](#roadmap).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -328,6 +333,52 @@ Details: [`docs/phase-11.md`](docs/phase-11.md).
   claude.md asks of events.
 
 Details: [`docs/phase-12.md`](docs/phase-12.md).
+
+---
+
+## What Phase 13 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Forms | `ApplicationType`, `ApprovalStep` | Per kind, per campus or every campus; extra questions; an ordered chain of steps, each decided by holders of a permission |
+| Requests | `Application`, `ApplicationEvent` | Submit → each step approves, rejects (with a reason) or sends back → resubmit; withdraw while open; full history |
+| Certificates | `Certificate` | Numbered, contents frozen at issue, revoked never deleted |
+| Public admission | — | No account: apply, check, fix and withdraw with a reference and secret token; throttled per address |
+
+- **Approval carries the request out** through the owning module's
+  service: an admission approved, a leave approved, a scholarship granted,
+  a bed reserved, a seat assigned, an event place confirmed, a certificate
+  issued. If that fails (bed taken, bus full) the approval is refused and
+  nothing changes.
+- **Nobody decides their own application** or their child's.
+- **Applicants are told** at every decision through Phase 8's
+  notifications, and public applicants by email or SMS.
+
+Details: [`docs/phase-13.md`](docs/phase-13.md).
+
+---
+
+## What Phase 14 delivers
+
+| Area | Models | What it does |
+|---|---|---|
+| Alumni | `AlumniProfile`, `Employment`, `HigherStudy`, `Achievement` | Made on graduation (what they finished is copied); the graduate keeps their own profile and history; opt-in directory |
+| Alumni life | `AlumniEvent`, `Rsvp`, `Mentorship` | Reunions with capacity and guests; graduates mentor students and younger alumni, with a capacity |
+| Giving | `Campaign`, `Donation`, `DonationRefund` | Numbered receipts, refunds as new rows, totals kept under locks |
+| Own hiring | `Vacancy`, `Candidacy`, `Interview`, `JobOffer` | Public or signed-in applications through the Phase 13 engine, screening, panel interviews, offers; approval with an accepted offer creates the staff member and HR contract |
+| Job board | `JobPosting` | Outside openings for students and/or alumni; alumni post, the office approves |
+| Files | `StoredFile` (`core/files`) | Private uploads: type from the bytes, size limit, generated names, download only after the owning module's access check |
+
+- **Graduation is an event.** The students module sends
+  `student_graduated`; alumni listens. The login stays and becomes an
+  alumni login, with its own notice audience.
+- **Hiring can't half-happen.** It's the job application's final
+  approval: no accepted offer, a filled vacancy or a taken employee number
+  refuses it and nothing is created.
+- **Uploads are private.** They're kept outside the public media folder,
+  served as attachments only, and limited to PDF, Word and images.
+
+Details: [`docs/phase-14.md`](docs/phase-14.md).
 
 ---
 
@@ -785,13 +836,14 @@ no more powerful than the admin).
 - **Numbers are typed in, not generated.** Student, employee and application
   numbers must be supplied; the API rejects duplicates. Automatic numbering
   can come once institutions agree on a format.
-- **Admissions are recorded by staff.** There is no public application form
-  yet. That arrives with the Applications phase.
+- **Public admission forms have no CAPTCHA or email verification yet.**
+  A per-address throttle guards them until the SaaS signup work adds both.
 - **Two-factor is optional.** Nothing forces admins to turn it on yet. The
   authenticator secret is stored readable in the database, as TOTP needs it
   to check codes; encrypting it at rest would need a separate key.
-- **File uploads** don't exist yet. Size, type and access checks come with
-  the first module that stores documents or photos.
+- **Uploads aren't virus-scanned.** Only PDF, Word (no macros) and images
+  are accepted, decided from the bytes, and they are served as downloads,
+  never inline. A scanner belongs behind the storage adapter.
 - **ZKTeco devices have no password.** Their push protocol names a device
   by serial number only. Set `allowed_ips` on every ZKTeco device; the
   generic device API uses a proper key instead.
@@ -997,7 +1049,8 @@ backend/
 │   ├── accounts/      User + user services
 │   ├── authentication/ JWT login, refresh, logout, me, change-password
 │   ├── permissions/   Permission, Role, UserRole + registry and selectors
-│   └── audit/         AuditLog, context middleware, audit services
+│   ├── audit/         AuditLog, context middleware, audit services
+│   └── files/         StoredFile: private uploads, type checks, access registry
 ├── modules/           business modules, Phase 2 onward
 │   ├── students/      Student, Enrollment
 │   ├── parents/       Parent, StudentParent
@@ -1027,8 +1080,13 @@ backend/
 │   │                  PayrollRun, Payslip, PayrollAdjustment
 │   ├── hostel/        Building, Floor, RoomType, HostelRoom, Bed, Allocation,
 │   │                  Complaint
-│   └── transport/     Vehicle, VehicleDocument, Driver, Route, Stop, Assignment,
-│                      Trip, TripRecord, Maintenance, FuelLog
+│   ├── transport/     Vehicle, VehicleDocument, Driver, Route, Stop, Assignment,
+│   │                  Trip, TripRecord, Maintenance, FuelLog
+│   ├── applications/  ApplicationType, ApprovalStep, Application,
+│   │                  ApplicationEvent, Certificate
+│   ├── alumni/        AlumniProfile, Employment, HigherStudy, Achievement,
+│   │                  AlumniEvent, Rsvp, Mentorship, Campaign, Donation
+│   └── careers/       Vacancy, Candidacy, Interview, JobOffer, JobPosting
 ├── integrations/
 │   ├── biometric/     ZKTeco and generic device adapters (Phase 4)
 │   ├── email/  sms/  push/  console-logging stubs; notifications.services.notify
@@ -1097,7 +1155,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1 to 12 are done. The order below is the **dependency order**: each
+Phases 1 to 14 are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -1116,13 +1174,20 @@ placeholders.
 | ~~10~~ | Inventory | 2 |
 | ~~11~~ | HR and payroll (extends `StaffMember`) | 2 |
 | ~~12~~ | Hostel and transport | 2, 6 |
-| 13 | Applications (public admission forms and other workflows) | 2 |
-| 14 | Alumni and careers (uses the graduated status) | 2 |
+| ~~13~~ | Applications (public admission forms and other workflows) | 2 |
+| ~~14~~ | Alumni and careers (uses the graduated status) | 2 |
+
+Queued after the phases, to run this as a free self-signup service: API
+keys per organization, public signup with email verification and CAPTCHA,
+per-organization throttles, quotas and module toggles, and PostgreSQL
+row-level security in production. Also queued: bulk Excel import of paper
+records.
 
 See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
 [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),
 [`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md),
 [`docs/phase-6.md`](docs/phase-6.md), [`docs/phase-7.md`](docs/phase-7.md),
-[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md), [`docs/phase-10.md`](docs/phase-10.md), [`docs/phase-11.md`](docs/phase-11.md) and
-[`docs/phase-12.md`](docs/phase-12.md) for the data model and the
+[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md), [`docs/phase-10.md`](docs/phase-10.md), [`docs/phase-11.md`](docs/phase-11.md),
+[`docs/phase-12.md`](docs/phase-12.md), [`docs/phase-13.md`](docs/phase-13.md) and
+[`docs/phase-14.md`](docs/phase-14.md) for the data model and the
 conventions every module follows.

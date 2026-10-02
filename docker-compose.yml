@@ -84,6 +84,8 @@ services:
       # Named volumes so 500 tracebacks and uploads outlive `down` and rebuilds.
       - error_logs:/app/logs
       - media_files:/app/media
+      # Private uploads (résumés): served only by the API, never as static files.
+      - private_files:/app/private
     ports:
       - "${BACKEND_PORT:-8000}:8000"
 
@@ -91,4 +93,5 @@ volumes:
   postgres_data:
   error_logs:
   media_files:
+  private_files:
  

@@ -23,4 +23,5 @@ services:
       # land in the working tree owned by the container user.
       - error_logs:/app/logs
       - media_files:/app/media
+      - private_files:/app/private
     command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
