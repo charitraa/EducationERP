@@ -14,6 +14,7 @@ from core.organizations.models import Campus, Organization
 from core.permissions.selectors import campus_ids_with_permission
 from modules.staff.selectors import staff_member_for_user
 from modules.students.selectors import student_for_user
+from integrations.captcha import base as captcha
 
 from . import services
 from .kinds import KINDS
@@ -394,6 +395,7 @@ class PublicSubmitView(PublicView):
         serializer = PublicSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        captcha.require(request, data.get("captcha_token", ""))
         application_type = ApplicationType.objects.filter(organization=organization, pk=data["application_type"],
                                                           is_public=True, is_active=True,
                                                           kind__in=DIRECT_KINDS).first()

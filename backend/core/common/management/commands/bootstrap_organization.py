@@ -9,11 +9,10 @@ The usual way to onboard a tenant:
 import secrets
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
 
-from core.accounts.services import create_user
-from core.organizations.models import Campus, Organization
-from core.permissions.models import Role
+from core.common.exceptions import ServiceError
+from core.organizations.models import Organization
+from core.organizations.services import create_organization
 
 
 class Command(BaseCommand):
@@ -34,9 +33,7 @@ class Command(BaseCommand):
             help="Generated and printed if omitted.",
         )
 
-    @transaction.atomic
     def handle(self, *args, **options):
-        code = options["code"].lower()
         # Checked here too: argparse `choices` only applies on the command
         # line, not when the command is called from code via call_command().
         if options["type"] not in Organization.Type.values:
@@ -44,35 +41,16 @@ class Command(BaseCommand):
                 f"Unknown type '{options['type']}'. "
                 f"Choose one of: {', '.join(Organization.Type.values)}."
             )
-        if Organization.all_objects.filter(code=code).exists():
-            raise CommandError(f"Organization '{code}' already exists.")
-
-        admin_role = Role.objects.filter(code="org-admin", organization=None).first()
-        if admin_role is None:
-            raise CommandError(
-                "System roles are missing. Run 'manage.py sync_permissions' first."
-            )
-
-        organization = Organization.objects.create(
-            name=options["name"], code=code, type=options["type"]
-        )
-        Campus.objects.create(
-            organization=organization,
-            name=options["campus_name"],
-            code=options["campus_code"].lower(),
-            is_main=True,
-        )
 
         password = options["admin_password"] or secrets.token_urlsafe(16)
-        admin = create_user(
-            email=options["admin_email"],
-            password=password,
-            organization=organization,
-            user_type="administrator",
-            first_name="Organization",
-            last_name="Administrator",
-            role_codes=["org-admin"],
-        )
+        try:
+            organization, _, admin = create_organization(
+                name=options["name"], code=options["code"], type=options["type"],
+                campus_name=options["campus_name"], campus_code=options["campus_code"],
+                admin_email=options["admin_email"], admin_password=password,
+            )
+        except ServiceError as exc:
+            raise CommandError(exc.detail) from exc
 
         self.stdout.write(self.style.SUCCESS(f"Created organization: {organization.name}"))
         self.stdout.write(self.style.SUCCESS(f"Admin user: {admin.email}"))

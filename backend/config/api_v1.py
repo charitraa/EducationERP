@@ -14,6 +14,7 @@ urlpatterns = [
     path("", include("core.audit.urls")),
     path("", include("core.files.urls")),
     path("", include("core.api_keys.urls")),
+    path("", include("core.signup.urls")),
     path("", include("modules.students.urls")),
     path("", include("modules.parents.urls")),
     path("", include("modules.staff.urls")),

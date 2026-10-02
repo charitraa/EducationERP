@@ -94,6 +94,7 @@ from modules.payroll.models import (
 from modules.applications.models import Application, ApplicationEvent, ApplicationType, ApprovalStep, Certificate
 from core.files.models import StoredFile
 from core.api_keys.models import ApiKey
+from core.signup.models import SignupRequest
 from core.accounts.models import User as AccountUser
 from modules.alumni.models import (
     Achievement,
@@ -217,6 +218,11 @@ SELF_ONLY_VIEWS = {
     # looked up inside it and an offer only through that organization's number and token —
     # modules/careers/tests (ApplyTests.test_public_refusals, PublicTenantTests).
     "PublicVacanciesView", "PublicVacancyView", "PublicApplyView", "PublicOfferView", "PublicOfferRespondView",
+    # Public signup and password reset (core/signup): no account and no record id in the body.
+    # Signup makes a new organization; the rest name only a code, an email, or a single-use
+    # token — tests in core/signup/tests.
+    "SignupConfigView", "StartSignupView", "ResendView", "VerifyView", "CheckCodeView",
+    "PasswordResetRequestView", "PasswordResetConfirmView",
 }
 
 CRUD_ACTIONS = {"list", "create", "retrieve", "update", "partial_update", "destroy"}
@@ -622,9 +628,13 @@ def build_tenant(tag):
                                                user_type="integration", first_name=f"{tag} Key")
     api_key = ApiKey.objects.create(organization=org, user=key_user, name=f"{tag} Website", prefix=f"{tag}key"[:16],
                                     secret_hash="0" * 64)
+    # The signup the organization was created from.
+    signup = SignupRequest.objects.create(organization_name=org.name, organization_code=org.code,
+                                          admin_email=f"founder@{tag}.test", admin_first_name=f"{tag} Founder",
+                                          token_expires_at=timezone.now(), status="completed", organization=org)
 
     return {
-        "api_key": api_key,
+        "api_key": api_key, "signup_request": signup,
         "alumni_profile": alumni_profile, "alumni_employment": employment, "alumni_study": higher_study,
         "alumni_achievement": achievement, "alumni_event": alumni_event, "alumni_rsvp": rsvp,
         "alumni_mentorship": mentorship, "alumni_campaign": campaign, "alumni_donation": donation,
@@ -1192,6 +1202,9 @@ NO_RECORD_INPUT = {
     ("CertificateViewSet", "revoke"),
     ("ApiKeyViewSet", "revoke"),
     ("ApiKeyViewSet", "rotate"),
+    # Platform admins only: refused (403) before any lookup.
+    ("SignupRequestViewSet", "approve"),
+    ("SignupRequestViewSet", "reject"),
     # Phase 14
     ("AlumniProfileViewSet", "me"),
     ("AlumniEventViewSet", "publish"),
@@ -1221,7 +1234,9 @@ NO_RECORD_INPUT = {
 # The leak checks still run either way.
 LIST_NEEDS_INPUT = {"ReportCardViewSet", "NotificationViewSet", "MessageThreadViewSet",
                     # "My uploads": scoped to the uploader, not a permission.
-                    "StoredFileViewSet"}
+                    "StoredFileViewSet",
+                    # Platform admins only: an organization's admin is refused outright.
+                    "SignupRequestViewSet"}
 
 # Writable nested serializers with no record ids inside, so there is nothing
 # to smuggle. Ones that do carry ids are attacked by hand (NESTED_ATTACKS).

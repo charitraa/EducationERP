@@ -59,6 +59,7 @@ CORE_APPS = [
     "core.authentication",
     "core.files",
     "core.api_keys",
+    "core.signup",
 ]
 
 # Business modules, in dependency order: each may use the ones above it.
@@ -262,6 +263,12 @@ REST_FRAMEWORK = {
         "uploads": config("THROTTLE_UPLOADS", default="30/hour"),
         # An API key without a rate of its own.
         "api_key": config("THROTTLE_API_KEY", default="300/min"),
+        # Public signup and its resend, per address.
+        "signup": config("THROTTLE_SIGNUP", default="10/hour"),
+        # Code availability and link checks, per address.
+        "signup_check": config("THROTTLE_SIGNUP_CHECK", default="60/min"),
+        # Forgot-password requests and confirmations, per address.
+        "password_reset": config("THROTTLE_PASSWORD_RESET", default="10/hour"),
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -378,8 +385,48 @@ SPECTACULAR_SETTINGS = {
         "AudienceEnum": "modules.notices.models.NoticeAudience",
         "StaffTypeEnum": "modules.staff.models.StaffMember.StaffType",
         "UserTypeEnum": "core.accounts.models.User.Type",
+        "TypeEnum": "core.organizations.models.Organization.Type",
+        "SignupRequestStatusEnum": "core.signup.models.SignupRequest.Status",
     },
 }
+
+# --------------------------------------------------------------------------
+# Public signup and password reset — see core/signup/
+# --------------------------------------------------------------------------
+# Off by default: a school running its own copy doesn't want strangers
+# creating organizations on it. Production refuses to start with signup on
+# and no CAPTCHA.
+SIGNUP_ENABLED = config("SIGNUP_ENABLED", default=False, cast=bool)
+# A platform admin approves each verified signup before it goes live.
+SIGNUP_REQUIRE_APPROVAL = config("SIGNUP_REQUIRE_APPROVAL", default=False, cast=bool)
+# How long the emailed verification link works.
+SIGNUP_TOKEN_HOURS = config("SIGNUP_TOKEN_HOURS", default=24, cast=int)
+# Frontend pages the emails link to; {token}, {uid} are filled in.
+SIGNUP_VERIFY_URL = config("SIGNUP_VERIFY_URL", default="http://localhost:5173/signup/verify?token={token}")
+PASSWORD_RESET_URL = config("PASSWORD_RESET_URL",
+                            default="http://localhost:5173/reset-password?uid={uid}&token={token}")
+# Django's reset tokens are good for this many seconds; we take minutes.
+PASSWORD_RESET_TIMEOUT = config("PASSWORD_RESET_MINUTES", default=60, cast=int) * 60
+# Extra throwaway-mail domains to refuse, on top of the built-in list.
+SIGNUP_BLOCKED_EMAIL_DOMAINS = config("SIGNUP_BLOCKED_EMAIL_DOMAINS", default="", cast=Csv())
+# Emails one address can be sent per hour (signup, resend, reset), so the
+# forms can't be used to flood someone's inbox from many addresses.
+EMAILS_PER_ADDRESS_PER_HOUR = config("EMAILS_PER_ADDRESS_PER_HOUR", default=5, cast=int)
+
+# CAPTCHA for no-login forms: off | turnstile | hcaptcha | recaptcha.
+CAPTCHA_PROVIDER = config("CAPTCHA_PROVIDER", default="off")
+CAPTCHA_SITE_KEY = config("CAPTCHA_SITE_KEY", default="")
+CAPTCHA_SECRET_KEY = config("CAPTCHA_SECRET_KEY", default="")
+# reCAPTCHA v3 only: the lowest score (0.0 bot - 1.0 human) let through.
+CAPTCHA_MIN_SCORE = config("CAPTCHA_MIN_SCORE", default=0.5, cast=float)
+if CAPTCHA_PROVIDER not in ("off", "turnstile", "hcaptcha", "recaptcha"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(f"Unknown CAPTCHA_PROVIDER {CAPTCHA_PROVIDER!r}.")
+
+# console: log mail instead of sending it | django: send via EMAIL_* settings.
+EMAIL_DELIVERY = config("EMAIL_DELIVERY", default="console")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="Education ERP <no-reply@localhost>")
 
 # --------------------------------------------------------------------------
 # Login protection — see core/authentication/lockout.py

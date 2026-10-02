@@ -21,6 +21,16 @@ if len(SECRET_KEY) < 50 or SECRET_KEY.startswith(_PLACEHOLDER_PREFIXES):
         "utils import get_random_secret_key as k; print(k())\""
     )
 
+# Public signup lets anyone create an organization; without a CAPTCHA a
+# script can create thousands and mail whoever it likes.
+if SIGNUP_ENABLED and (CAPTCHA_PROVIDER == "off" or not CAPTCHA_SECRET_KEY):  # noqa: F405
+    raise ImproperlyConfigured(
+        "SIGNUP_ENABLED needs a CAPTCHA in production: set CAPTCHA_PROVIDER, "
+        "CAPTCHA_SITE_KEY and CAPTCHA_SECRET_KEY."
+    )
+if SIGNUP_ENABLED and EMAIL_DELIVERY != "django":  # noqa: F405
+    raise ImproperlyConfigured("SIGNUP_ENABLED needs EMAIL_DELIVERY=django: verification links must be sent.")
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",

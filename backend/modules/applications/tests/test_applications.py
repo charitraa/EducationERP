@@ -424,3 +424,20 @@ class PublicAdmissionTests(ApplicationsTestCase):
         first = self.public(**body).data["number"]
         Application.objects.get(number=first).delete()
         self.assertNotEqual(self.public(**body).data["number"], first)
+
+    def test_captcha_is_checked_when_on(self):
+        from unittest import mock
+
+        from django.test import override_settings
+
+        body = {"application_type": self.form.pk, "campus": self.campus.pk,
+                "contact": {"name": "X", "phone": "9800000001"}, "data": {"first_name": "A", "last_name": "B"}}
+        with override_settings(CAPTCHA_PROVIDER="turnstile", CAPTCHA_SECRET_KEY="s"), \
+                mock.patch("integrations.captcha.base._siteverify", return_value=False) as check:
+            response = self.public(**body, captcha_token="bad")
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.data["error"]["code"], "captcha_failed")
+            self.assertEqual(self.public(**body).status_code, 400)  # no token: never asks the provider
+            self.assertEqual(check.call_count, 1)
+            check.return_value = True
+            self.assertEqual(self.public(**body, captcha_token="good").status_code, 201)

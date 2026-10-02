@@ -248,6 +248,9 @@ class PublicSubmitSerializer(serializers.Serializer):
     campus = serializers.IntegerField()
     contact = ContactSerializer()
     data = serializers.JSONField()
+    captcha_token = serializers.CharField(required=False, allow_blank=True, max_length=4096, write_only=True,
+                                          help_text="The CAPTCHA widget's token (GET /signup/config/ names the "
+                                                    "widget). Not needed while CAPTCHA is off.")
 
 
 class PublicLookupSerializer(serializers.Serializer):
