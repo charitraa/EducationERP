@@ -25,8 +25,13 @@ leave, scholarship, hostel, transport, event and certificate requests,
 with public admission forms) and alumni and careers (Phase 14:
 graduation into alumni, self-service profiles, events, mentoring,
 donations, the school's own hiring from vacancy to contract, a job board,
-and private file uploads) are built and tested. What's next is the SaaS
-work — see [Roadmap](#roadmap).
+and private file uploads) are built and tested. The SaaS work has
+started: per-organization API keys are done
+([`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md)) — see
+[Roadmap](#roadmap).
+
+Building the UI? Read [`docs/frontend-brief.md`](docs/frontend-brief.md), with the
+endpoint list in [`docs/api/`](docs/api/).
 
 New here? Start with [How it works, in plain words](#how-it-works-in-plain-words):
 organizations vs campuses, roles, and setting up a school with one campus or
@@ -788,6 +793,9 @@ Client sends:  Authorization: Bearer <access token>
  JSON response.  Errors always look like {"error": {"code", "message", "details"}}
 ```
 
+**Programs** use an API key instead: `Authorization: Api-Key erp_...`. A key
+has its own roles, like a person — see [`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md).
+
 **Login:** `POST /auth/login/` returns an **access** token (valid 60 minutes),
 a **refresh** token (7 days) and the user's roles and permissions. When the
 access token expires, `POST /auth/refresh/` returns a new one.
@@ -1025,6 +1033,25 @@ POST   /api/v1/transport/assignments/generate-invoices/                the term'
 GET    /api/v1/transport/trips/  trips/mine/                           POST opens (crew); {id}/mark/  complete/
 GET    /api/v1/transport/trip-records/  trip-records/me/               boarding history
 
+GET    /api/v1/application-types/  application-types/available/        CRUD forms + approval steps; forms I can fill
+GET    /api/v1/applications/  me/  pending/                            POST submits; {id}/approve/  reject/  send-back/  resubmit/  withdraw/
+GET    /api/v1/certificates/  certificates/me/                         POST issues; {id}/revoke/
+POST   /api/v1/public/organizations/{code}/applications/  status/  resubmit/  withdraw/   no login (admission)
+
+GET    /api/v1/alumni/profiles/  me/  directory/  mentors/             CRUD (office); PATCH me/; POST graduate/
+GET    /api/v1/alumni/employments/  higher-studies/  achievements/     the graduate's own, or the office
+GET    /api/v1/alumni/events/  events/upcoming/                        CRUD; {id}/publish/  cancel/  rsvp/  rsvps/
+GET    /api/v1/alumni/mentorships/                                     POST asks; {id}/accept/  decline/  end/
+GET    /api/v1/alumni/campaigns/  campaigns/open/  donations/  donations/me/   POST donations/; {id}/refund/
+GET    /api/v1/careers/vacancies/  vacancies/current/                  CRUD; {id}/open/  close/  apply/
+GET    /api/v1/careers/candidacies/  interviews/  interviews/mine/  offers/  offers/mine/
+POST   /api/v1/careers/candidacies/{id}/screen/   interviews/{id}/reschedule/  cancel/  outcome/   offers/{id}/withdraw/  respond/
+GET    /api/v1/careers/postings/  postings/mine/                       the job board; POST posts; {id}/review/  close/
+GET    /api/v1/public/organizations/{code}/careers/vacancies/          no login; POST vacancies/{id}/apply/  offer/  offer/respond/
+POST   /api/v1/files/                      upload (multipart); GET files/  files/{id}/download/
+
+GET    /api/v1/api-keys/                   CRUD (no delete); POST {id}/assign-role/  revoke-role/  rotate/  revoke/
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -1050,6 +1077,7 @@ backend/
 │   ├── authentication/ JWT login, refresh, logout, me, change-password
 │   ├── permissions/   Permission, Role, UserRole + registry and selectors
 │   ├── audit/         AuditLog, context middleware, audit services
+│   ├── api_keys/      ApiKey: integration identities with roles, Api-Key auth
 │   └── files/         StoredFile: private uploads, type checks, access registry
 ├── modules/           business modules, Phase 2 onward
 │   ├── students/      Student, Enrollment
@@ -1177,11 +1205,16 @@ placeholders.
 | ~~13~~ | Applications (public admission forms and other workflows) | 2 |
 | ~~14~~ | Alumni and careers (uses the graduated status) | 2 |
 
-Queued after the phases, to run this as a free self-signup service: API
-keys per organization, public signup with email verification and CAPTCHA,
-per-organization throttles, quotas and module toggles, and PostgreSQL
-row-level security in production. Also queued: bulk Excel import of paper
-records.
+After the phases, to run this as a free self-signup service:
+
+| Step | Scope | Status |
+|------|-------|--------|
+| ~~S1~~ | API keys per organization: own roles, read-only, expiry, address allowlist, own rate limit | Done — [`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md) |
+| S2 | Public signup with email verification and CAPTCHA | |
+| S3 | Per-organization throttles, quotas and module toggles | |
+| S4 | PostgreSQL row-level security in production | |
+
+Also queued: bulk Excel import of paper records.
 
 See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
 [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),

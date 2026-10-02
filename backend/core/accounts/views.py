@@ -39,7 +39,8 @@ class UserViewSet(OrganizationScopedViewSet):
     specific to each arrives with the Phase 2 modules.
     """
 
-    queryset = User.objects.select_related("organization").prefetch_related(
+    # API keys' integration users are managed through /api-keys/ only.
+    queryset = User.objects.exclude(user_type=User.Type.INTEGRATION).select_related("organization").prefetch_related(
         Prefetch(
             "role_assignments",
             queryset=UserRole.objects.select_related("role", "campus"),

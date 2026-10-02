@@ -93,6 +93,8 @@ from modules.payroll.models import (
 )
 from modules.applications.models import Application, ApplicationEvent, ApplicationType, ApprovalStep, Certificate
 from core.files.models import StoredFile
+from core.api_keys.models import ApiKey
+from core.accounts.models import User as AccountUser
 from modules.alumni.models import (
     Achievement,
     AlumniEvent,
@@ -615,7 +617,14 @@ def build_tenant(tag):
     job_posting = JobPosting.objects.create(organization=org, title=f"{tag} Developer", company=f"{tag} Ltd",
                                             description="x", apply_url="https://example.com", status="approved")
 
+    # SaaS — API keys, each with its own integration user
+    key_user = AccountUser.objects.create_user(email=f"key@{tag}.test", password=None, organization=org,
+                                               user_type="integration", first_name=f"{tag} Key")
+    api_key = ApiKey.objects.create(organization=org, user=key_user, name=f"{tag} Website", prefix=f"{tag}key"[:16],
+                                    secret_hash="0" * 64)
+
     return {
+        "api_key": api_key,
         "alumni_profile": alumni_profile, "alumni_employment": employment, "alumni_study": higher_study,
         "alumni_achievement": achievement, "alumni_event": alumni_event, "alumni_rsvp": rsvp,
         "alumni_mentorship": mentorship, "alumni_campaign": campaign, "alumni_donation": donation,
@@ -1045,6 +1054,17 @@ ACTION_ATTACKS.update({
 })
 
 ACTION_ATTACKS.update({
+    # API keys: role grants name a role and a campus, both checked against the key's organization.
+    ("ApiKeyViewSet", "assign_role"): [
+        lambda a, b: ("api_key", {"role": b["role"].pk}),
+        lambda a, b: ("api_key", {"role": a["role"].pk, "campus": b["campus"].pk}),
+    ],
+    ("ApiKeyViewSet", "revoke_role"): [
+        lambda a, b: ("api_key", {"role": b["role"].pk}),
+    ],
+})
+
+ACTION_ATTACKS.update({
     # Phase 14: plain input serializers with record ids.
     ("AlumniProfileViewSet", "graduate"): [
         lambda a, b: (None, {"section": b["section"].pk}),
@@ -1170,6 +1190,8 @@ NO_RECORD_INPUT = {
     # check is attacked through ``create`` above.
     ("ApplicationViewSet", "resubmit"),
     ("CertificateViewSet", "revoke"),
+    ("ApiKeyViewSet", "revoke"),
+    ("ApiKeyViewSet", "rotate"),
     # Phase 14
     ("AlumniProfileViewSet", "me"),
     ("AlumniEventViewSet", "publish"),

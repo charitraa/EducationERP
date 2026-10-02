@@ -31,6 +31,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel, SoftDeleteModel
         ADMINISTRATOR = "administrator", "Administrator"
         # A graduate keeps their login (Phase 14); set on graduation.
         ALUMNI = "alumni", "Alumni"
+        # An API key's own identity: can't log in, never listed with people.
+        INTEGRATION = "integration", "Integration (API key)"
 
     email = models.EmailField(unique=True, db_index=True)
     phone = models.CharField(max_length=32, blank=True, db_index=True)

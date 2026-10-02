@@ -13,6 +13,7 @@ urlpatterns = [
     path("", include("core.permissions.urls")),
     path("", include("core.audit.urls")),
     path("", include("core.files.urls")),
+    path("", include("core.api_keys.urls")),
     path("", include("modules.students.urls")),
     path("", include("modules.parents.urls")),
     path("", include("modules.staff.urls")),

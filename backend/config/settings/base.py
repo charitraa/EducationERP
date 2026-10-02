@@ -58,6 +58,7 @@ CORE_APPS = [
     "core.audit",
     "core.authentication",
     "core.files",
+    "core.api_keys",
 ]
 
 # Business modules, in dependency order: each may use the ones above it.
@@ -207,6 +208,8 @@ CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Programs: "Authorization: Api-Key erp_..." (core/api_keys).
+        "core.api_keys.authentication.ApiKeyAuthentication",
     ),
     # Secure by default: every endpoint requires auth unless it opts out.
     "DEFAULT_PERMISSION_CLASSES": (
@@ -244,6 +247,8 @@ REST_FRAMEWORK = {
         # copy out the whole student list in seconds.
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
+        # Each API key's own limit; does nothing for a person's login.
+        "core.api_keys.throttling.ApiKeyRateThrottle",
     ),
     "DEFAULT_THROTTLE_RATES": {
         "login": config("THROTTLE_LOGIN", default="10/min"),
@@ -255,6 +260,8 @@ REST_FRAMEWORK = {
         "public_applications": config("THROTTLE_PUBLIC_APPLICATIONS", default="20/hour"),
         # File uploads, per user.
         "uploads": config("THROTTLE_UPLOADS", default="30/hour"),
+        # An API key without a rate of its own.
+        "api_key": config("THROTTLE_API_KEY", default="300/min"),
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }

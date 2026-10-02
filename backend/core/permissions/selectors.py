@@ -154,4 +154,5 @@ def users_holding(codes, *, campus_id, organization_id):
                 .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
                 .filter(Q(campus__isnull=True) | Q(campus_id=campus_id))
                 .values("user_id"))
-    return User.objects.filter(pk__in=role_ids, is_active=True)
+    # People only: an API key holding the permission has nobody to tell.
+    return User.objects.filter(pk__in=role_ids, is_active=True).exclude(user_type=User.Type.INTEGRATION)
