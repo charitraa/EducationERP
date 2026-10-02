@@ -91,6 +91,7 @@ from modules.payroll.models import (
     TaxScheme,
     TaxSlab,
 )
+from modules.applications.models import Application, ApplicationEvent, ApplicationType, ApprovalStep, Certificate
 from modules.hostel.models import Allocation as HostelAllocation
 from modules.hostel.models import Bed, Building, Complaint, Floor, HostelRoom, RoomType
 from modules.transport.models import Assignment as RideAssignment
@@ -192,6 +193,10 @@ SELF_ONLY_VIEWS = {
     # the caller's own organization in the serializer before any query runs — see the tenant test
     # in modules/finance/tests/test_access.py.
     "AssessLateFeesView",
+    # Public application forms: no account; the organization is named by its code in the
+    # URL and every id in the body (form, campus) is looked up inside it — tenant tests in
+    # modules/applications/tests (PublicAdmissionTests.test_refusals).
+    "PublicTypesView", "PublicSubmitView", "PublicStatusView", "PublicResubmitView", "PublicWithdrawView",
 }
 
 CRUD_ACTIONS = {"list", "create", "retrieve", "update", "partial_update", "destroy"}
@@ -227,6 +232,7 @@ QUERY_PARAMS = {
     "vehicle": "transport_vehicle", "driver": "transport_driver", "route": "transport_route",
     "stop": "transport_stop", "trip": "transport_trip", "assignment": "transport_assignment",
     "assignment__student": "student", "assignment__staff": "staff", "trip__route": "transport_route",
+    "application_type": "application_type", "application": "application",
 }
 
 
@@ -524,7 +530,23 @@ def build_tenant(tag):
     fuel_log = FuelLog.objects.create(organization=org, vehicle=vehicle, date=date.today(), litres=10, cost=1000,
                                       note=f"{tag} fuel")
 
+    # Phase 13 — applications
+    application_type = ApplicationType.objects.create(organization=org, code=f"{tag}-hostel",
+                                                      name=f"{tag} Hostel form", kind="hostel")
+    ApprovalStep.objects.create(organization=org, application_type=application_type, sequence=1,
+                                name=f"{tag} Warden", permission="hostel.manage")
+    application = Application.objects.create(organization=org, application_type=application_type, campus=campus,
+                                             number=f"{tag}-APP-1", applicant=user, student=student,
+                                             data={"note": f"{tag} please"}, submitted_at=timezone.now())
+    ApplicationEvent.objects.create(organization=org, application=application, action="submitted",
+                                    note=f"{tag} sent")
+    certificate = Certificate.objects.create(organization=org, student=student, title=f"{tag} Character",
+                                             number=f"{tag}-CERT-1", issued_on=date.today(),
+                                             contents={"student_name": tag})
+
     return {
+        "application_type": application_type, "application": application,
+        "certificate": certificate,
         "hostel_building": building, "hostel_floor": floor, "hostel_room_type": room_type,
         "hostel_room": hostel_room, "hostel_bed": bed, "hostel_bed2": bed2, "hostel_allocation": hostel_allocation,
         "hostel_complaint": complaint,
@@ -924,6 +946,27 @@ ACTION_ATTACKS.update({
     ],
 })
 
+ACTION_ATTACKS.update({
+    # Phase 13: the submission and decision serializers are plain input; ids inside ``data`` and
+    # ``decision`` are checked by each kind (applications/kinds.py).
+    ("ApplicationViewSet", "create"): [
+        lambda a, b: (None, {"application_type": b["application_type"].pk, "student": a["student"].pk,
+                             "data": {}}),
+        lambda a, b: (None, {"application_type": a["application_type"].pk, "student": b["student"].pk,
+                             "data": {}}),
+        lambda a, b: (None, {"application_type": a["application_type"].pk, "student": a["student"].pk,
+                             "data": {"building": b["hostel_building"].pk}}),
+        lambda a, b: (None, {"application_type": a["application_type"].pk, "student": a["student"].pk,
+                             "data": {"room_type": b["hostel_room_type"].pk}}),
+    ],
+    ("ApplicationViewSet", "approve"): [
+        lambda a, b: ("application", {"decision": {"bed": b["hostel_bed2"].pk}}),
+    ],
+    ("CertificateViewSet", "create"): [
+        lambda a, b: (None, {"student": b["student"].pk, "title": "x"}),
+    ],
+})
+
 # Write actions whose body names no other record, so the detail sweep (a
 # foreign pk in the URL) is all there is to attack.
 NO_RECORD_INPUT = {
@@ -1013,6 +1056,14 @@ NO_RECORD_INPUT = {
     ("ComplaintViewSet", "me"),
     ("AssignmentViewSet", "end"),
     ("TripViewSet", "complete"),
+    ("ApplicationViewSet", "reject"),
+    ("ApplicationViewSet", "send_back"),
+    ("ApplicationViewSet", "withdraw"),
+    # Its body does carry ids (``data``), but only the applicant may resubmit, and the attacker
+    # fixture never is one: it gets 403 before the body is read. The same ``kinds.clean_data``
+    # check is attacked through ``create`` above.
+    ("ApplicationViewSet", "resubmit"),
+    ("CertificateViewSet", "revoke"),
 }
 
 # Collections where an empty request legitimately returns nothing for the
@@ -1028,6 +1079,7 @@ LIST_NEEDS_INPUT = {"ReportCardViewSet", "NotificationViewSet", "MessageThreadVi
 NESTED_WITHOUT_IDS = {
     ("GradeScaleSerializer", "bands"), ("GradeScaleSerializer", "divisions"),
     ("ExamSubjectSerializer", "components"), ("TaxSchemeSerializer", "slabs"),
+    ("ApplicationTypeSerializer", "steps"),
 }
 NESTED_WITH_IDS = {("ResultPlanSerializer", "items"), ("FeeStructureSerializer", "items"),
                    ("SalaryStructureSerializer", "lines"), ("StaffSalarySerializer", "lines")}

@@ -32,4 +32,6 @@ urlpatterns = [
     path("", include("modules.payroll.urls")),
     path("", include("modules.hostel.urls")),
     path("", include("modules.transport.urls")),
+    # Phase 13
+    path("", include("modules.applications.urls")),
 ]

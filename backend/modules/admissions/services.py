@@ -55,6 +55,18 @@ def _decide(admission: Admission, status: str, note: str, by) -> Admission:
 
 
 @transaction.atomic
+def create_admission(*, organization_id: int, campus, application_number: str, by=None, **fields) -> Admission:
+    """Record an application received elsewhere (e.g. through the
+    applications module's public form). The number must be unused."""
+    if Admission.objects.filter(organization_id=organization_id, application_number=application_number).exists():
+        raise ConflictError("This application number is already in use.", code="duplicate_number")
+    admission = Admission.objects.create(organization_id=organization_id, campus=campus,
+                                         application_number=application_number, **fields)
+    log(AuditLog.Action.CREATE, instance=admission, module="admissions", actor=by)
+    return admission
+
+
+@transaction.atomic
 def approve_admission(*, admission: Admission, note: str = "", by=None) -> Admission:
     admission = _decide(_lock(admission, "approve"), Status.APPROVED, note, by)
     _notify_application_approved(admission)

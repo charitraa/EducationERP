@@ -81,6 +81,7 @@ MODULE_APPS: list[str] = [
     "modules.payroll",
     "modules.hostel",
     "modules.transport",
+    "modules.applications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -128,10 +129,18 @@ TEMPLATES = [
 # Database — overridden per environment (SQLite dev / PostgreSQL prod).
 # All business logic goes through the ORM so the engine stays swappable.
 # --------------------------------------------------------------------------
+# SQLite has no row locks (select_for_update is a no-op), so two requests
+# that read the same row and then both write would fail with "database is
+# locked". IMMEDIATE takes the write lock when a transaction starts, making
+# concurrent writers wait their turn, the way row locks make them wait on
+# PostgreSQL.
+SQLITE_OPTIONS = {"transaction_mode": "IMMEDIATE", "timeout": 20}
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
+        "OPTIONS": SQLITE_OPTIONS,
     }
 }
 
@@ -226,6 +235,8 @@ REST_FRAMEWORK = {
         "user": config("THROTTLE_USER", default="600/min"),
         # Attendance devices sending punches (generic device API).
         "device": config("THROTTLE_DEVICE", default="120/min"),
+        # Public application forms (no account): per address.
+        "public_applications": config("THROTTLE_PUBLIC_APPLICATIONS", default="20/hour"),
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -321,6 +332,9 @@ SPECTACULAR_SETTINGS = {
         "TripStatusEnum": "modules.transport.models.TripStatus",
         "BoardingStatusEnum": "modules.transport.models.BoardingStatus",
         "VehicleMaintenanceKindEnum": "modules.transport.models.MaintenanceKind",
+        "ApplicationKindEnum": "modules.applications.models.Kind",
+        "ApplicationStatusEnum": "modules.applications.models.Status",
+        "ApplicationEventActionEnum": "modules.applications.models.EventAction",
     },
 }
 

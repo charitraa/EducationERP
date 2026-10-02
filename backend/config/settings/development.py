@@ -34,6 +34,7 @@ if DEV_DATABASE == "sqlite":
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": SQLITE_OPTIONS,  # noqa: F405
         }
     }
 elif DEV_DATABASE in ("mysql", "postgres"):

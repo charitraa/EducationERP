@@ -212,7 +212,9 @@ def _employed_throughout(staff, start: Date, end: Date) -> bool:
 
 
 def apply_leave(*, staff, leave_type: LeaveType, start_date: Date, end_date: Date, half_day: bool = False,
-                reason: str = "", by=None) -> LeaveRequest:
+                reason: str = "", by=None, notify_approvers: bool = True) -> LeaveRequest:
+    """``notify_approvers=False`` when the request is approved in the same
+    breath (the applications module), so approvers aren't asked to act."""
     if not leave_type.is_active:
         raise ServiceError("This leave type is no longer in use.", code="inactive_leave_type")
     if end_date < start_date:
@@ -251,7 +253,8 @@ def apply_leave(*, staff, leave_type: LeaveType, start_date: Date, end_date: Dat
             start_date=start_date, end_date=end_date, half_day=half_day, days=days, reason=reason, applied_by=by,
         )
         log(AuditLog.Action.CREATE, instance=request, module=MODULE, actor=by)
-    _notify_approvers(request)
+    if notify_approvers:
+        _notify_approvers(request)
     return request
 
 
