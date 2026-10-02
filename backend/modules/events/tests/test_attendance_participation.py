@@ -1,6 +1,6 @@
 """Checking students in, and recording their role in an event."""
 from ..models import EventAttendance, EventParticipation
-from .base import API, EventTestCase
+from .base import API, STARTED, EventTestCase
 
 EVENTS = f"{API}/events/"
 
@@ -8,7 +8,7 @@ EVENTS = f"{API}/events/"
 class AttendanceTestCase(EventTestCase):
     def setUp(self):
         super().setUp()
-        self.event = self.make_event()
+        self.event = self.make_event(start_at=STARTED)
 
     def mark(self, entries, who=None):
         self.login(who or self.hari_user)
@@ -44,6 +44,26 @@ class MarkAttendanceTests(AttendanceTestCase):
         r = self.mark([])
         self.assertEqual(r.status_code, 400)
 
+    def test_next_weeks_event_cannot_be_marked(self):
+        self.event = self.make_event(name="Futsal Cup")
+        r = self.mark([{"student": self.ram.pk, "status": "present"}])
+        self.assertError(r, 409, "not_started")
+        self.assertFalse(EventAttendance.objects.filter(event=self.event).exists())
+
+    def test_a_cancelled_event_cannot_be_marked(self):
+        from modules.events import services
+
+        services.cancel_event(self.event, "Rain")
+        r = self.mark([{"student": self.ram.pk, "status": "present"}])
+        self.assertError(r, 409, "not_published")
+
+    def test_a_draft_event_cannot_be_marked(self):
+        from ..models import EventStatus
+
+        self.event = self.make_event(name="Chess", status=EventStatus.DRAFT, start_at=STARTED)
+        r = self.mark([{"student": self.ram.pk, "status": "present"}])
+        self.assertError(r, 409, "not_published")
+
     def test_remarking_updates_the_record_without_duplicating_it(self):
         self.mark([{"student": self.ram.pk, "status": "present"}])
         self.mark([{"student": self.ram.pk, "status": "absent"}])
@@ -63,7 +83,7 @@ class MarkAttendanceTests(AttendanceTestCase):
 class ParticipationTests(EventTestCase):
     def setUp(self):
         super().setUp()
-        self.event = self.make_event()
+        self.event = self.make_event(start_at=STARTED)
 
     def record(self, student, role, who=None, **extra):
         self.login(who or self.hari_user)
@@ -74,6 +94,12 @@ class ParticipationTests(EventTestCase):
         r = self.record(self.ram, "winner", position=1, remark="Best speech")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual((r.data["role"], r.data["position"]), ("winner", 1))
+
+    def test_no_winners_before_the_event(self):
+        self.event = self.make_event(name="Futsal Cup")
+        r = self.record(self.ram, "winner", position=1)
+        self.assertError(r, 409, "not_started")
+        self.assertFalse(EventParticipation.objects.filter(event=self.event).exists())
 
     def test_a_student_can_hold_two_different_roles(self):
         self.record(self.ram, "participant")

@@ -126,6 +126,51 @@ class ElectiveTests(ElectiveTestCase):
         self.assertEqual(self.choose(far, self.computer).status_code, 403)
 
 
+class BackDatedElectiveTests(ElectiveTestCase):
+    """A school that starts using the system mid-year records choices made in
+    April, so April's exams and registers include those students."""
+
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone
+
+        self.today = timezone.localdate()
+        self.joined = self.today - timedelta(days=90)
+        Enrollment.objects.filter(student__in=[self.ram, self.sita]).update(started_on=self.joined)
+
+    def choose_from(self, student, subject, started_on, **extra):
+        return self.client.post(f"{API}/student-electives/", {"student": student.pk, "subject": subject.pk,
+                                                               "started_on": started_on.isoformat(), **extra})
+
+    def test_a_choice_can_start_when_the_class_did(self):
+        response = self.choose_from(self.ram, self.computer, self.joined)
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["started_on"], self.joined.isoformat())
+        self.assertTrue(StudentElective.objects.on(self.joined + timedelta(days=10))
+                        .filter(enrollment__student=self.ram, subject=self.computer).exists())
+
+    def test_not_before_the_student_joined_the_class(self):
+        response = self.choose_from(self.ram, self.computer, self.joined - timedelta(days=1))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("started_on", response.data["error"]["details"])
+
+    def test_without_a_date_it_still_starts_today(self):
+        response = self.choose(self.ram, self.computer)
+
+        self.assertEqual(response.data["started_on"], self.today.isoformat())
+
+    def test_a_back_dated_choice_belongs_to_the_class_of_that_day(self):
+        moved = self.today - timedelta(days=30)
+        place_student(student=self.ram, section=self.b, on_date=moved)
+
+        response = self.choose_from(self.ram, self.computer, self.joined)
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["section"], self.a.pk)
+
+
 class PromotionTests(ElectiveTestCase):
     def setUp(self):
         super().setUp()

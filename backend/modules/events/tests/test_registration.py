@@ -21,6 +21,17 @@ class OpenRegistrationTests(EventTestCase):
         r = self.client.post(f"{EVENTS}{self.event.pk}/register/", {"note": "Excited!"})
         self.assertEqual((r.status_code, r.data["status"]), (201, "confirmed"))
 
+    def test_an_overlong_note_is_refused(self):
+        from tests.factories import create_user
+
+        user = create_user(self.org, email="ram@kmc.test")
+        self.ram.user = user
+        self.ram.save(update_fields=["user"])
+        self.login(user)
+        r = self.client.post(f"{EVENTS}{self.event.pk}/register/", {"note": "x" * 256})
+        self.assertEqual(r.status_code, 400, r.data)
+        self.assertFalse(self.event.registrations.exists())
+
     def test_cannot_register_twice(self):
         from tests.factories import create_user
 
@@ -154,18 +165,61 @@ class ApprovalRegistrationTests(EventTestCase):
         r2 = self.client.post(f"{REGISTRATIONS}{reg_id}/decide/", {"approve": True})
         self.assertError(r2, 409, "event_full")
 
-    def test_a_plain_post_to_registrations_is_refused(self):
-        # "create" isn't a declared permission, so HasPermission blocks even the office
-        # before create()'s own refusal is ever reached (same ordering as elsewhere).
-        self.login(self.office)
-        r = self.client.post(REGISTRATIONS, {"event": self.event.pk, "student": self.ram.pk})
-        self.assertEqual(r.status_code, 403)
 
-        from tests.factories import create_superuser
+class StaffRegistrationTests(EventTestCase):
+    """The organizer or the office enters students (a team sheet, students
+    with no account) — through the same rules as self-registration."""
 
-        self.login(create_superuser(email="root@platform.test"))
-        r2 = self.client.post(REGISTRATIONS, {"event": self.event.pk, "student": self.ram.pk})
-        self.assertEqual(r2.status_code, 405)
+    def setUp(self):
+        super().setUp()
+        self.event = self.make_event(registration_mode=RegistrationMode.APPROVAL, capacity=2)
+
+    def enter(self, student, who=None, event=None, **extra):
+        self.login(who or self.hari_user)
+        return self.client.post(REGISTRATIONS, {"event": (event or self.event).pk, "student": student.pk, **extra})
+
+    def test_the_organizer_enters_a_student_confirmed(self):
+        r = self.enter(self.ram, note="Goalkeeper")
+        self.assertEqual((r.status_code, r.data["status"], r.data["note"]), (201, "confirmed", "Goalkeeper"))
+
+    def test_the_office_can_too(self):
+        r = self.enter(self.ram, who=self.office)
+        self.assertEqual(r.status_code, 201, r.data)
+
+    def test_capacity_and_duplicates_still_apply(self):
+        self.enter(self.ram)
+        self.assertError(self.enter(self.ram), 409, "already_registered")
+        self.enter(self.shyam)
+        self.assertError(self.enter(self.gita), 409, "event_full")
+        self.assertEqual(self.event.registrations.count(), 2)
+
+    def test_closed_registration_still_applies(self):
+        event = self.make_event(name="Past", registration_mode=RegistrationMode.NONE)
+        self.assertError(self.enter(self.ram, event=event), 409, "registration_closed")
+
+    def test_only_the_events_own_campus(self):
+        from tests.factories import create_student
+
+        elsewhere = create_student(self.other_campus, student_number="S-9", first_name="Bina")
+        self.assertError(self.enter(elsewhere, who=self.principal), 400, "wrong_campus")
+
+    def test_someone_else_organizing_a_different_event_cannot(self):
+        from tests.factories import create_staff_member, user_with_system_role
+
+        other_staff = create_staff_member(self.campus, employee_number="E-9", first_name="Other")
+        other_user = user_with_system_role(self.org, "staff", email="other@kmc.test")
+        other_staff.user = other_user
+        other_staff.save(update_fields=["user"])
+        self.assertError(self.enter(self.ram, who=other_user), 403, "not_your_event")
+        self.assertFalse(self.event.registrations.exists())
+
+    def test_a_student_cannot_enter_others(self):
+        from tests.factories import create_user
+
+        user = create_user(self.org, email="ram@kmc.test")
+        self.ram.user = user
+        self.ram.save(update_fields=["user"])
+        self.assertEqual(self.enter(self.shyam, who=user).status_code, 403)
 
 
 class NoRegistrationTests(EventTestCase):

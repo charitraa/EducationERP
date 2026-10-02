@@ -259,7 +259,8 @@ def _campus_scoped_own(qs, request, campus_field, own_q):
 
 @extend_schema_view(
     list=extend_schema(tags=[TAG]), retrieve=extend_schema(tags=[TAG]),
-    create=extend_schema(tags=[TAG], summary="Issue a copy"),
+    create=extend_schema(tags=[TAG], summary="Issue a copy", request=IssueBookSerializer,
+                         responses={201: IssueSerializer}),
 )
 class IssueViewSet(OrganizationScopedViewSet):
     http_method_names = ["get", "post", "head", "options"]
@@ -309,7 +310,8 @@ class IssueViewSet(OrganizationScopedViewSet):
 
 @extend_schema_view(
     list=extend_schema(tags=[TAG]), retrieve=extend_schema(tags=[TAG]),
-    create=extend_schema(tags=[TAG], summary="Reserve a book with nothing available right now"),
+    create=extend_schema(tags=[TAG], summary="Reserve a book with nothing available right now",
+                         request=ReserveBookSerializer, responses={201: ReservationSerializer}),
 )
 class ReservationViewSet(OrganizationScopedViewSet):
     http_method_names = ["get", "post", "head", "options"]

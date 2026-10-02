@@ -429,8 +429,9 @@ class TimetableEntryViewSet(TimetableViewSet):
 
     @extend_schema(
         tags=["timetable"], summary="Generate the weekly timetable",
-        description="Fills each teaching assignment up to its periods_per_week. With dry_run "
-                    "(the default) it only returns the plan; with dry_run false it saves it.",
+        description="Fills each teaching assignment up to its periods_per_week, from valid_from "
+                    "(default today). With dry_run (the default) it only returns the plan; with "
+                    "dry_run false it saves it.",
         request=GenerateSerializer, responses={200: None, 201: None},
     )
     @action(detail=False, methods=["post"])
@@ -442,7 +443,7 @@ class TimetableEntryViewSet(TimetableViewSet):
         data = serializer.validated_data
         self.check_campus_allowed(data["schedule"].campus_id)
         plan = plan_timetable(sections=data["sections"], schedule=data["schedule"],
-                              days=data["days"], term=data.get("term"))
+                              days=data["days"], term=data.get("term"), start=data.get("valid_from"))
 
         created = []
         if not data["dry_run"]:

@@ -421,6 +421,12 @@ class GenerateSerializer(serializers.Serializer):
         queryset=Term.objects.all(), required=False, allow_null=True,
         help_text="Generate lessons for this term only. Empty: all year.",
     )
+    valid_from = serializers.DateField(
+        required=False, allow_null=True,
+        help_text="When the lessons begin. Default: today. An earlier date (down to the year or term "
+                  "start) puts in the timetable the school has really been following, so registers "
+                  "for past days can still be taken.",
+    )
     dry_run = serializers.BooleanField(
         default=True, help_text="True (default): only show the plan. False: save it."
     )
@@ -448,6 +454,12 @@ class GenerateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"term": "The term belongs to another academic year."})
         if not attrs["days"] or len(set(attrs["days"])) != len(attrs["days"]):
             raise serializers.ValidationError({"days": "Give each teaching day once."})
+        if attrs.get("valid_from") is not None:
+            first, last = span(academic_year=sections[0].academic_year, term=term)
+            if not first <= attrs["valid_from"] <= last:
+                raise serializers.ValidationError(
+                    {"valid_from": f"Must fall within {first} – {last}."}
+                )
         attrs["sections"] = list({s.pk: s for s in sections}.values())
         return attrs
 

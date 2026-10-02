@@ -170,7 +170,7 @@ own choices in the student's history. Compulsory subjects aren't recorded,
 because every student of the section takes them.
 
 ```
-POST   /api/v1/student-electives/  {"student", "subject"}   uses the student's current class
+POST   /api/v1/student-electives/  {"student", "subject", "started_on"?}   the class they're in that day
 GET    /api/v1/student-electives/?section=&student=&subject=&current=true
 DELETE /api/v1/student-electives/{id}/                       current class only; earlier ones are history (409)
 GET    /api/v1/sections/{id}/students/?subject=<id>          who takes a subject
@@ -180,6 +180,11 @@ Rules:
 
 - The subject must be an elective at the student's level and program.
 - The student must be placed in a class.
+- A choice starts today unless `started_on` says otherwise. A school
+  setting up mid-year back-dates the choices made at admission, so the
+  exams and registers since then include those students. It can't be
+  before the student joined that class (400 on `started_on`), and it is
+  stored against the class they were in on that day.
 - No duplicates.
 - A student can't take two electives whose lessons meet at the same time.
 - A move within the same level (11 A → 11 B) keeps the choices. A

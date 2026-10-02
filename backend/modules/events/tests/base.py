@@ -17,6 +17,7 @@ from modules.events.models import Event, EventCategory, EventStatus, Registratio
 
 TODAY = date.today()
 NOW = timezone.now()
+STARTED = NOW - timedelta(hours=1)  # an event under way: attendance and results can be taken
 API = "/api/v1"
 _UNSET = object()  # distinct from an explicit campus=None (an org-wide, shared event)
 
@@ -50,11 +51,12 @@ class EventTestCase(APITestCaseBase):
         self.authenticate(getattr(who, "user", None) or who)
 
     def make_event(self, name="Sports Day", organized_by=None, status=EventStatus.PUBLISHED,
-                  registration_mode=RegistrationMode.OPEN, campus=_UNSET, category=None, **fields):
+                  registration_mode=RegistrationMode.OPEN, campus=_UNSET, category=None, start_at=None, **fields):
+        start_at = start_at or NOW + timedelta(days=7)
         event = Event.objects.create(
             organization=self.org, campus=self.campus if campus is _UNSET else campus,
             category=self.category if category is None else category,
-            name=name, start_at=NOW + timedelta(days=7), end_at=NOW + timedelta(days=7, hours=3),
+            name=name, start_at=start_at, end_at=start_at + timedelta(hours=3),
             status=EventStatus.DRAFT, registration_mode=registration_mode,
             organized_by=organized_by if organized_by is not None else self.hari, **fields,
         )

@@ -500,11 +500,13 @@ class SectionStudentSerializer(serializers.Serializer):
 
 
 class StudentElectiveSerializer(TenantSerializer):
-    """Record that a student takes an elective, from today.
+    """Record that a student takes an elective, from today or ``started_on``.
 
     Written with ``student``; stored against their enrollment in the class
-    they're in today (or in ``section``, e.g. next year's class they've been
-    promoted into), so the choice stays with that class in their history."""
+    they're in on that day (or in ``section``, e.g. next year's class they've
+    been promoted into), so the choice stays with that class in their history.
+    ``started_on`` back-dates a choice made before the school started using
+    the system, so earlier exams and registers include the student."""
 
     student = serializers.PrimaryKeyRelatedField(
         queryset=Student.objects.all(), write_only=True, help_text="Uses the student's current class."
@@ -514,6 +516,10 @@ class StudentElectiveSerializer(TenantSerializer):
         help_text="Choose for this class of the student's instead of today's, e.g. next year's.",
     )
     subject = serializers.PrimaryKeyRelatedField(queryset=Subject.objects.all())
+    started_on = serializers.DateField(
+        required=False, help_text="When the student began the subject. Default: today, or the class's start "
+                                  "if later. Can't be before the student joined the class.",
+    )
     student_id = serializers.IntegerField(source="enrollment.student_id", read_only=True)
     student_name = serializers.CharField(source="enrollment.student.full_name", read_only=True)
     student_number = serializers.CharField(source="enrollment.student.student_number", read_only=True)
@@ -526,7 +532,7 @@ class StudentElectiveSerializer(TenantSerializer):
         fields = ["id", "student", "in_section", "student_id", "student_name", "student_number",
                   "enrollment", "section", "section_name", "subject", "subject_name",
                   "started_on", "ended_on", "created_at"]
-        read_only_fields = ["id", "enrollment", "started_on", "ended_on", "created_at"]
+        read_only_fields = ["id", "enrollment", "ended_on", "created_at"]
 
     def validate_student(self, student):
         return self.own(student, "student")
@@ -537,15 +543,22 @@ class StudentElectiveSerializer(TenantSerializer):
     def validate(self, attrs):
         today = timezone.localdate()
         student, in_section = attrs.pop("student"), attrs.pop("in_section", None)
+        started_on = attrs.pop("started_on", None)
+        # The class the choice belongs to: the one the student is in on the
+        # chosen day (a back-dated choice may be for a class they've since left).
+        day = started_on or today
         if in_section is not None:
-            # A class the student is in or will be in: not one they've left.
+            # A class the student is in or will be in on that day: not one they'd already left.
             enrollment = student.enrollments.filter(section=in_section).filter(
-                Q(ended_on__isnull=True) | Q(ended_on__gt=today)
+                Q(ended_on__isnull=True) | Q(ended_on__gt=day)
             ).first()
             if enrollment is None:
                 raise serializers.ValidationError({"in_section": "The student isn't in that class."})
         else:
-            enrollment = Enrollment.objects.on(today).filter(student=student).first()
+            enrollment = Enrollment.objects.on(day).filter(student=student).first()
+            if enrollment is None and started_on is not None:
+                # Before they joined any class: say so against today's class.
+                enrollment = Enrollment.objects.on(today).filter(student=student).first()
         if enrollment is None or enrollment.section is None:
             raise serializers.ValidationError({"student": "The student isn't placed in a class."})
         section, subject = enrollment.section, attrs["subject"]
@@ -567,8 +580,12 @@ class StudentElectiveSerializer(TenantSerializer):
                 {"subject": f"{subject.name} is taught at the same time as {clash}, "
                             f"which the student already takes."}
             )
+        if started_on is not None and started_on < enrollment.started_on:
+            raise serializers.ValidationError(
+                {"started_on": f"The student only joined {section.display_name} on {enrollment.started_on}."}
+            )
         attrs["enrollment"] = enrollment
-        attrs["started_on"] = max(today, enrollment.started_on)
+        attrs["started_on"] = started_on or max(today, enrollment.started_on)
         return attrs
 
 

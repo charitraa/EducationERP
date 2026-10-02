@@ -143,7 +143,8 @@ class AppointmentSlotViewSet(CampusScopedViewSet):
 @extend_schema_view(
     list=extend_schema(tags=[TAG], summary="List appointments"),
     retrieve=extend_schema(tags=[TAG], summary="Retrieve an appointment"),
-    create=extend_schema(tags=[TAG], summary="Book an open slot"),
+    create=extend_schema(tags=[TAG], summary="Book an open slot", request=BookAppointmentSerializer,
+                         responses={201: AppointmentSerializer}),
 )
 class AppointmentViewSet(OrganizationScopedViewSet):
     http_method_names = ["get", "post", "head", "options"]

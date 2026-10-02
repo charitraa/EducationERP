@@ -63,6 +63,38 @@ class GenerateTests(TimetableTestCase):
         self.assertEqual(TimetableEntry.objects.count(), 8)
         self.assertEqual((again.status_code, again.data["lessons"]), (200, []))
 
+    def test_lessons_start_today_by_default(self):
+        from django.utils import timezone
+
+        self.generate(dry_run=False)
+
+        self.assertEqual(set(TimetableEntry.objects.values_list("valid_from", flat=True)), {timezone.localdate()})
+
+    def test_lessons_can_start_at_the_year_start(self):
+        """A school setting up mid-year enters the timetable it has followed
+        since the year began, so last week's registers can still be taken."""
+        response = self.generate(dry_run=False, valid_from=self.year.start_date.isoformat())
+
+        self.assertEqual(response.status_code, 201, response.data)
+        # From the year's first day is the whole year: no start of its own.
+        self.assertEqual(set(TimetableEntry.objects.values_list("valid_from", flat=True)), {None})
+
+    def test_a_start_from_part_way_through(self):
+        from datetime import timedelta
+
+        start = self.year.start_date + timedelta(days=30)
+        self.generate(dry_run=False, valid_from=start.isoformat())
+
+        self.assertEqual(set(TimetableEntry.objects.values_list("valid_from", flat=True)), {start})
+
+    def test_the_start_must_be_in_the_year(self):
+        from datetime import timedelta
+
+        response = self.generate(valid_from=(self.year.start_date - timedelta(days=1)).isoformat())
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("valid_from", response.data["error"]["details"])
+
     def test_existing_lessons_count(self):
         create_timetable_entry(self.a_physics, self.p1, MONDAY, room=self.r101)
 

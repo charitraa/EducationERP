@@ -2,7 +2,7 @@ from django_filters import rest_framework as filters
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import MethodNotAllowed, NotFound, ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -42,6 +42,8 @@ from .serializers import (
     MarkAttendanceSerializer,
     PointEntrySerializer,
     PointRuleSerializer,
+    RegisterSerializer,
+    RegisterStudentSerializer,
     StudentAwardSerializer,
     StudentPointsSerializer,
 )
@@ -194,7 +196,7 @@ class EventViewSet(OrganizationScopedViewSet):
         event = services.cancel_event(self._event(), serializer.validated_data["reason"], by=request.user)
         return Response(EventSerializer(event).data)
 
-    @extend_schema(tags=[TAG], summary="Register for the event (students)", request=None,
+    @extend_schema(tags=[TAG], summary="Register for the event (students)", request=RegisterSerializer,
                    responses={201: EventRegistrationSerializer})
     @action(detail=True, methods=["post"])
     def register(self, request, pk=None):
@@ -213,8 +215,9 @@ class EventViewSet(OrganizationScopedViewSet):
         ).first()
         if event is None:
             raise NotFound("No such event.")
-        note = request.data.get("note", "")
-        registration = services.register(event, student, note=note, by=request.user)
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        registration = services.register(event, student, note=serializer.validated_data["note"], by=request.user)
         return Response(EventRegistrationSerializer(registration).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(tags=[TAG], summary="Who's registered", responses={200: EventRegistrationSerializer(many=True)})
@@ -302,18 +305,26 @@ class EventRegistrationViewSet(OrganizationScopedViewSet):
     queryset = EventRegistration.objects.select_related("event", "student")
     serializer_class = EventRegistrationSerializer
     filterset_fields = ["event", "student", "status"]
-    required_permissions = {"list": [VIEW], "retrieve": [VIEW], "decide": [COORDINATE]}
+    required_permissions = {"list": [VIEW], "retrieve": [VIEW], "create": [COORDINATE], "decide": [COORDINATE]}
 
     def get_permissions(self):
         if self.action == "withdraw":
             return [IsAuthenticated()]
         return super().get_permissions()
 
+    @extend_schema(tags=[TAG], summary="Register a student (organizer or events office)",
+                   description="For a team sheet or a student without an account. The same rules as "
+                               "self-registration (open, not full, not twice, the student's campus); an "
+                               "approval event's registration is confirmed at once.",
+                   request=RegisterStudentSerializer, responses={201: EventRegistrationSerializer})
     def create(self, request, *args, **kwargs):
-        # Registering is only ever done through EventViewSet.register(), which enforces
-        # capacity, the registration mode, and duplicate sign-ups — a plain POST here would
-        # bypass all of it (and could still be reached by a superuser, who skips HasPermission).
-        raise MethodNotAllowed("POST")
+        # Not ModelViewSet's create: everything goes through services.register_for, which
+        # enforces capacity, the registration mode and duplicate sign-ups.
+        serializer = RegisterStudentSerializer(data=request.data, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        registration = services.register_for(data["event"], data["student"], note=data["note"], by=request.user)
+        return Response(EventRegistrationSerializer(registration).data, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
         # Same reasoning as EventViewSet: an org-wide event's registrations are shared by every
@@ -466,6 +477,8 @@ class StudentAwardViewSet(EventsViewSet):
         student = validated_data.get("student")
         return student.campus if student is not None else None
 
+    @extend_schema(tags=[TAG], summary="Grant an award by hand", request=GrantAwardSerializer,
+                   responses={201: StudentAwardSerializer})
     def create(self, request, *args, **kwargs):
         serializer = GrantAwardSerializer(data=request.data, context=self.get_serializer_context())
         serializer.is_valid(raise_exception=True)

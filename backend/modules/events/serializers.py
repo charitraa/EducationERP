@@ -104,6 +104,22 @@ class EventRegistrationSerializer(OwnedModelSerializer):
         return value
 
 
+class RegisterStudentSerializer(serializers.Serializer):
+    event = serializers.PrimaryKeyRelatedField(queryset=Event.objects.all())
+    student = serializers.PrimaryKeyRelatedField(queryset=Student.objects.all())
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+
+    def validate_event(self, value):
+        if value.organization_id != target_organization_id(self):
+            raise serializers.ValidationError("Unknown event.")
+        return value
+
+    def validate_student(self, value):
+        if value.organization_id != target_organization_id(self):
+            raise serializers.ValidationError("Unknown student.")
+        return value
+
+
 class DecideRegistrationSerializer(serializers.Serializer):
     approve = serializers.BooleanField()
     note = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
@@ -291,3 +307,8 @@ class GrantAwardSerializer(serializers.Serializer):
 
 class CancelEventSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=255)
+
+
+class RegisterSerializer(serializers.Serializer):
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True, default="",
+                                 help_text="Why they're applying, for an approval event.")

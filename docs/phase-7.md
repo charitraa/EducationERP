@@ -56,6 +56,12 @@ follows one of three modes set per event:
 | `open` | Registering confirms it immediately |
 | `approval` | Registering leaves it `pending`; the organizer or the office decides |
 
+Students sign up themselves (`events/{id}/register/`). The organizer or the
+office can also enter a student (`POST /event-registrations/`, for a team
+sheet or a student without an account): the same rules — open, not full,
+not twice, the event's own campus — and, since they could approve it
+anyway, it's confirmed at once.
+
 An optional **capacity** closes registration once that many are
 **confirmed** — never a waitlist, and never counting a `pending` request
 until it's approved. Withdrawing frees the slot.
@@ -64,8 +70,8 @@ until it's approved. Withdrawing frees the slot.
 
 Publishing, cancelling and the fee-structure-style setup (categories, point
 rules, award rules) are the office's job (`events.manage`). Day-to-day
-running one — deciding registrations, taking attendance, recording
-participation — belongs to whoever is named as the event's `organized_by`,
+running one — entering and deciding registrations, taking attendance,
+recording participation — belongs to whoever is named as the event's `organized_by`,
 the same shape as a subject teacher marking their own class's exam (Phase
 5): checked against the event, not just a permission code
 (`services.ensure_can_run`). The office can still step in on any event.
@@ -79,6 +85,12 @@ a role (participant, winner, runner-up, organizer, volunteer) and, for a
 competition, where they placed — a student can hold several roles at once,
 but recording the same role again just updates it (a corrected placing),
 never duplicates it.
+
+Both only for a published event whose day has come, in the organization's
+timezone (409 `not_published` for a draft or cancelled one, `not_started`
+for a future one): they award points, so nobody can be checked in to, or
+win, an event that hasn't happened. The day, not the minute, so the gate
+can check people in before it starts.
 
 ## Points: a general ledger, configured by rule
 
@@ -117,7 +129,8 @@ POST   /api/v1/events/{id}/register/                                  students; 
 GET    /api/v1/events/{id}/registrations/  attendance/  participation/  roster/
 POST   /api/v1/events/{id}/mark-attendance/  record-participation/    the organizer, or the office
 GET    /api/v1/events/me/                                             a student's/parent's own events
-GET    /api/v1/event-registrations/                                   list/retrieve only (made via register/)
+GET    /api/v1/event-registrations/                                   list/retrieve
+POST   /api/v1/event-registrations/                                   organizer or office enters a student
 POST   /api/v1/event-registrations/{id}/decide/  withdraw/
 GET    /api/v1/point-rules/                                           CRUD
 GET    /api/v1/point-entries/                                         list/retrieve; POST awards by hand

@@ -277,13 +277,17 @@ the default is the first found, in that order.
 ```
 POST /api/v1/timetable/generate/
 {"sections": [...], "schedule": <bell schedule>, "days": [7, 1, 2, 3, 4, 5],
- "term"?: <term>, "dry_run": true}
+ "term"?: <term>, "valid_from"?: <date>, "dry_run": true}
 ```
 
 It fills each teaching assignment of those sections up to its
 `periods_per_week`, using the bell schedule's periods on the given days.
 `days` are ISO numbers, so Sunday–Friday is `[7, 1, 2, 3, 4, 5]`.
 
+- **Lessons start today** unless `valid_from` says otherwise. A school
+  setting up mid-year gives the date it has really followed this timetable
+  since (down to the year or term start), so registers for past days can
+  still be taken. Outside the year or term is a 400.
 - **`dry_run` is the default.** It returns the plan and saves nothing. With
   `"dry_run": false` the plan is saved (201). Each lesson is checked again
   under row locks, just like a hand-made one.

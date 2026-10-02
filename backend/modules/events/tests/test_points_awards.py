@@ -7,7 +7,7 @@ from ..models import (
     StudentAward,
     StudentPoints,
 )
-from .base import API, EventTestCase
+from .base import API, STARTED, EventTestCase
 
 EVENTS = f"{API}/events/"
 POINT_RULES = f"{API}/point-rules/"
@@ -40,7 +40,7 @@ class PointRuleTests(EventTestCase):
 class AttendancePointsTests(EventTestCase):
     def setUp(self):
         super().setUp()
-        self.event = self.make_event()
+        self.event = self.make_event(start_at=STARTED)
         PointRule.objects.create(organization=self.org, name="Attend", category=self.category, source="attendance",
                                  points=10)
 
@@ -66,7 +66,7 @@ class AttendancePointsTests(EventTestCase):
 
     def test_a_rule_for_a_different_category_does_not_apply(self):
         other_category = EventCategory.objects.create(organization=self.org, code="cultural", name="Cultural")
-        event = self.make_event(name="Debate", category=other_category)
+        event = self.make_event(start_at=STARTED, name="Debate", category=other_category)
         self.login(self.hari_user)
         self.client.post(f"{EVENTS}{event.pk}/mark-attendance/",
                          {"entries": [{"student": self.ram.pk, "status": "present"}]}, format="json")
@@ -75,7 +75,7 @@ class AttendancePointsTests(EventTestCase):
     def test_a_category_wide_rule_applies_to_every_category(self):
         PointRule.objects.create(organization=self.org, name="Attend anything", source="attendance", points=5)
         other_category = EventCategory.objects.create(organization=self.org, code="cultural", name="Cultural")
-        event = self.make_event(name="Debate", category=other_category)
+        event = self.make_event(start_at=STARTED, name="Debate", category=other_category)
         self.login(self.hari_user)
         self.client.post(f"{EVENTS}{event.pk}/mark-attendance/",
                          {"entries": [{"student": self.ram.pk, "status": "present"}]}, format="json")
@@ -85,7 +85,7 @@ class AttendancePointsTests(EventTestCase):
 class ParticipationPointsTests(EventTestCase):
     def setUp(self):
         super().setUp()
-        self.event = self.make_event()
+        self.event = self.make_event(start_at=STARTED)
         PointRule.objects.create(organization=self.org, name="Win", category=self.category, source="participation",
                                  role="winner", points=50)
 
@@ -201,9 +201,9 @@ class AutomaticAwardTests(EventTestCase):
         AwardRule.objects.create(organization=self.org, award=badge, threshold_kind="events_attended",
                                  threshold_value=2, category=self.category)
         other_category = EventCategory.objects.create(organization=self.org, code="cultural", name="Cultural")
-        e1 = self.make_event(name="E1")
-        e2 = self.make_event(name="E2")
-        e3 = self.make_event(name="E3", category=other_category)
+        e1 = self.make_event(start_at=STARTED, name="E1")
+        e2 = self.make_event(start_at=STARTED, name="E2")
+        e3 = self.make_event(start_at=STARTED, name="E3", category=other_category)
         services.mark_attendance(e1, [(self.ram.pk, "present")], by=self.office)
         services.mark_attendance(e3, [(self.ram.pk, "present")], by=self.office)
         self.assertFalse(StudentAward.objects.filter(student=self.ram, award=badge).exists())
@@ -215,7 +215,7 @@ class AutomaticAwardTests(EventTestCase):
 
         badge = Award.objects.create(organization=self.org, kind="title", code="champion", name="Champion")
         AwardRule.objects.create(organization=self.org, award=badge, threshold_kind="events_won", threshold_value=1)
-        event = self.make_event()
+        event = self.make_event(start_at=STARTED)
         services.record_participation(event, self.ram, "winner", by=self.office)
         self.assertTrue(StudentAward.objects.filter(student=self.ram, award=badge).exists())
 

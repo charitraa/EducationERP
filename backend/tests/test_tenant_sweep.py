@@ -1338,7 +1338,7 @@ class ForeignIdInBodyTests(TenantSweepTestCase):
                     body = {**context(self.a), name: [foreign] if many else foreign}
                     response, problems = self.attack("post", route.url(), body)
                     # A view whose create() refuses every POST outright (see AdmitCardViewSet,
-                    # InvoiceViewSet, EventRegistrationViewSet) never validates the body at all: an
+                    # InvoiceViewSet) never validates the body at all: an
                     # ordinary attacker is blocked by HasPermission first (403, "create" isn't a
                     # declared permission), and even a superuser reaching create() gets 405 — both
                     # stricter refusals than a 400 naming the field, so both are held.

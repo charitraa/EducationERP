@@ -122,6 +122,22 @@ def register(event: Event, student, *, note: str = "", by=None) -> EventRegistra
     return registration
 
 
+def register_for(event: Event, student, *, by, note: str = "") -> EventRegistration:
+    """Staff entering a student (a team sheet, a student with no account).
+    Same rules as a student signing up — open, not full, not twice, the
+    student's own campus — and, since whoever may do this may also approve,
+    an approval event's registration is confirmed straight away."""
+    ensure_can_run(by, event)
+    if event.campus_id is not None and student.campus_id != event.campus_id:
+        raise ServiceError("This event is for another campus's students.", code="wrong_campus")
+    with transaction.atomic():
+        registration = register(event, student, note=note, by=by)
+        if registration.status == RegistrationStatus.PENDING:
+            registration = decide_registration(registration, True, note="Registered by staff", by=by)
+    log(AuditLog.Action.CREATE, instance=registration, module=MODULE, actor=by)
+    return registration
+
+
 def decide_registration(registration: EventRegistration, approve: bool, *, note: str = "", by=None) -> EventRegistration:
     with transaction.atomic():
         registration = EventRegistration.objects.select_for_update().select_related("event").get(pk=registration.pk)
@@ -203,6 +219,19 @@ def _matching_rules(event: Event, source: str, role: str | None = None):
     return rules
 
 
+def ensure_held(event: Event) -> None:
+    """Attendance and results only for a published event whose day has come
+    (in the organization's timezone, so the gate can check people in before
+    the starting minute). Both award points, so a draft, a cancelled event or
+    next week's one must not."""
+    from modules.attendance.services import local_date, org_today
+
+    if event.status != EventStatus.PUBLISHED:
+        raise ConflictError("This event isn't running.", code="not_published")
+    if local_date(event.start_at, event.organization) > org_today(event.organization):
+        raise ConflictError("The event hasn't started yet.", code="not_started")
+
+
 # ---------------------------------------------------------------------------
 # Attendance
 # ---------------------------------------------------------------------------
@@ -212,6 +241,7 @@ def mark_attendance(event: Event, entries: list[tuple[int, str]], *, by=None) ->
     present, or marking absent, awards nothing further."""
     from modules.students.models import Student
 
+    ensure_held(event)
     if not entries:
         raise ServiceError("Give at least one student.", code="no_entries")
     saved = []
@@ -244,6 +274,7 @@ def record_participation(event: Event, student, role: str, *, position=None, rem
                          by=None) -> EventParticipation:
     """Points for a role are awarded once, the first time it's recorded;
     changing the position or remark afterwards doesn't award it again."""
+    ensure_held(event)
     with transaction.atomic():
         participation = EventParticipation.objects.select_for_update().filter(
             event=event, student=student, role=role).first()
