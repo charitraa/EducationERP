@@ -92,6 +92,20 @@ from modules.payroll.models import (
     TaxSlab,
 )
 from modules.applications.models import Application, ApplicationEvent, ApplicationType, ApprovalStep, Certificate
+from core.files.models import StoredFile
+from modules.alumni.models import (
+    Achievement,
+    AlumniEvent,
+    AlumniProfile,
+    Campaign,
+    Donation,
+    DonationRefund,
+    Employment,
+    HigherStudy,
+    Mentorship,
+    Rsvp,
+)
+from modules.careers.models import Candidacy, Interview, JobOffer, JobPosting, Vacancy
 from modules.hostel.models import Allocation as HostelAllocation
 from modules.hostel.models import Bed, Building, Complaint, Floor, HostelRoom, RoomType
 from modules.transport.models import Assignment as RideAssignment
@@ -197,6 +211,10 @@ SELF_ONLY_VIEWS = {
     # URL and every id in the body (form, campus) is looked up inside it — tenant tests in
     # modules/applications/tests (PublicAdmissionTests.test_refusals).
     "PublicTypesView", "PublicSubmitView", "PublicStatusView", "PublicResubmitView", "PublicWithdrawView",
+    # Public careers pages, the same way: the organization comes from the URL, the vacancy is
+    # looked up inside it and an offer only through that organization's number and token —
+    # modules/careers/tests (ApplyTests.test_public_refusals, PublicTenantTests).
+    "PublicVacanciesView", "PublicVacancyView", "PublicApplyView", "PublicOfferView", "PublicOfferRespondView",
 }
 
 CRUD_ACTIONS = {"list", "create", "retrieve", "update", "partial_update", "destroy"}
@@ -233,7 +251,13 @@ QUERY_PARAMS = {
     "stop": "transport_stop", "trip": "transport_trip", "assignment": "transport_assignment",
     "assignment__student": "student", "assignment__staff": "staff", "trip__route": "transport_route",
     "application_type": "application_type", "application": "application",
+    "profile": "alumni_profile", "mentor": "alumni_profile", "donor": "alumni_profile",
+    "campaign": "alumni_campaign", "vacancy": "careers_vacancy", "candidacy": "careers_candidacy",
 }
+
+
+def _later():
+    return date.today() + timedelta(days=30)
 
 
 def next_monday():
@@ -544,7 +568,60 @@ def build_tenant(tag):
                                              number=f"{tag}-CERT-1", issued_on=date.today(),
                                              contents={"student_name": tag})
 
+    # Phase 14 — alumni and careers (and the shared file store)
+    alumni_profile = AlumniProfile.objects.create(organization=org, campus=campus, first_name=f"{tag} Alumna",
+                                                  last_name="Graduate", program=program, academic_year="2080/81",
+                                                  is_mentor=True, directory_visible=True)
+    employment = Employment.objects.create(organization=org, profile=alumni_profile, employer=f"{tag} Corp",
+                                           title=f"{tag} Engineer", start_date=date(2023, 1, 1))
+    higher_study = HigherStudy.objects.create(organization=org, profile=alumni_profile,
+                                              institution=f"{tag} University", qualification="MSc", start_year=2024)
+    achievement = Achievement.objects.create(organization=org, profile=alumni_profile, title=f"{tag} Prize")
+    alumni_event = AlumniEvent.objects.create(organization=org, campus=campus, title=f"{tag} Reunion",
+                                              starts_at=timezone.now() + timedelta(days=30), status="published")
+    rsvp = Rsvp.objects.create(organization=org, event=alumni_event, profile=alumni_profile, response="going")
+    mentorship = Mentorship.objects.create(organization=org, mentor=alumni_profile, student=student,
+                                           topic=f"{tag} career advice")
+    campaign = Campaign.objects.create(organization=org, campus=campus, code=f"{tag}-library",
+                                       name=f"{tag} Library fund", starts_on=date.today())
+    donation = Donation.objects.create(organization=org, campus=campus, campaign=campaign, donor=alumni_profile,
+                                       donor_name=f"{tag} Donor", amount=1000, received_on=date.today(),
+                                       receipt_number=f"{tag}-DON-1")
+    donation_refund = DonationRefund.objects.create(organization=org, donation=donation, amount=100,
+                                                    refunded_on=date.today(), reason=f"{tag} refund")
+    job_form = ApplicationType.objects.create(organization=org, code=f"{tag}-job", name=f"{tag} Job form",
+                                              kind="job", is_public=True)
+    ApprovalStep.objects.create(organization=org, application_type=job_form, sequence=1, name=f"{tag} Principal",
+                                permission="careers.hire")
+    vacancy = Vacancy.objects.create(organization=org, campus=campus, application_type=job_form,
+                                     code=f"{tag}-teacher", title=f"{tag} Teacher", status="open",
+                                     opens_on=date.today())
+    job_application = Application.objects.create(organization=org, application_type=job_form, campus=campus,
+                                                 number=f"{tag}-APP-2", data={"first_name": tag},
+                                                 submitted_at=timezone.now())
+    candidacy = Candidacy.objects.create(organization=org, vacancy=vacancy, application=job_application,
+                                         full_name=f"{tag} Candidate", email=f"candidate@{tag}.test")
+    stored_file = StoredFile.objects.create(organization=org, file=f"{org.pk}/{tag}.pdf", name=f"{tag} cv.pdf",
+                                            content_type="application/pdf", extension="pdf", size=10,
+                                            sha256="0" * 64, purpose="resume", uploaded_by=user,
+                                            owner_type="careers.candidacy", owner_id=candidacy.pk)
+    candidacy.resume = stored_file
+    candidacy.save(update_fields=["resume"])
+    interview = Interview.objects.create(organization=org, candidacy=candidacy, location=f"{tag} Room",
+                                         scheduled_at=timezone.now() + timedelta(days=3))
+    interview.panel.set([staff])
+    job_offer = JobOffer.objects.create(organization=org, candidacy=candidacy, start_date=_later(),
+                                        contract_kind="probation", salary_note=f"{tag} grade")
+    job_posting = JobPosting.objects.create(organization=org, title=f"{tag} Developer", company=f"{tag} Ltd",
+                                            description="x", apply_url="https://example.com", status="approved")
+
     return {
+        "alumni_profile": alumni_profile, "alumni_employment": employment, "alumni_study": higher_study,
+        "alumni_achievement": achievement, "alumni_event": alumni_event, "alumni_rsvp": rsvp,
+        "alumni_mentorship": mentorship, "alumni_campaign": campaign, "alumni_donation": donation,
+        "alumni_refund": donation_refund, "careers_vacancy": vacancy, "careers_candidacy": candidacy,
+        "careers_interview": interview, "careers_offer": job_offer, "careers_posting": job_posting,
+        "stored_file": stored_file,
         "application_type": application_type, "application": application,
         "certificate": certificate,
         "hostel_building": building, "hostel_floor": floor, "hostel_room_type": room_type,
@@ -967,6 +1044,35 @@ ACTION_ATTACKS.update({
     ],
 })
 
+ACTION_ATTACKS.update({
+    # Phase 14: plain input serializers with record ids.
+    ("AlumniProfileViewSet", "graduate"): [
+        lambda a, b: (None, {"section": b["section"].pk}),
+        lambda a, b: (None, {"students": [b["student"].pk]}),
+    ],
+    ("MentorshipViewSet", "create"): [
+        lambda a, b: (None, {"mentor": b["alumni_profile"].pk, "topic": "x"}),
+    ],
+    ("DonationViewSet", "create"): [
+        lambda a, b: (None, {"campus": b["campus"].pk, "donor_name": "x", "amount": "10"}),
+        lambda a, b: (None, {"campus": a["campus"].pk, "campaign": b["alumni_campaign"].pk, "donor_name": "x",
+                             "amount": "10"}),
+        lambda a, b: (None, {"campus": a["campus"].pk, "donor": b["alumni_profile"].pk, "amount": "10"}),
+    ],
+    ("VacancyViewSet", "apply"): [
+        lambda a, b: ("careers_vacancy", {"data": {"first_name": "x", "last_name": "y", "phone": "1"},
+                                          "resume_file": b["stored_file"].pk}),
+    ],
+    ("InterviewViewSet", "create"): [
+        lambda a, b: (None, {"candidacy": b["careers_candidacy"].pk, "scheduled_at": _future() + "T10:00:00Z"}),
+        lambda a, b: (None, {"candidacy": a["careers_candidacy"].pk, "scheduled_at": _future() + "T10:00:00Z",
+                             "panel": [b["staff"].pk]}),
+    ],
+    ("JobOfferViewSet", "create"): [
+        lambda a, b: (None, {"candidacy": b["careers_candidacy"].pk, "start_date": _future()}),
+    ],
+})
+
 # Write actions whose body names no other record, so the detail sweep (a
 # foreign pk in the URL) is all there is to attack.
 NO_RECORD_INPUT = {
@@ -1064,6 +1170,25 @@ NO_RECORD_INPUT = {
     # check is attacked through ``create`` above.
     ("ApplicationViewSet", "resubmit"),
     ("CertificateViewSet", "revoke"),
+    # Phase 14
+    ("AlumniProfileViewSet", "me"),
+    ("AlumniEventViewSet", "publish"),
+    ("AlumniEventViewSet", "cancel"),
+    ("AlumniEventViewSet", "rsvp"),
+    ("MentorshipViewSet", "accept"),
+    ("MentorshipViewSet", "decline"),
+    ("MentorshipViewSet", "end"),
+    ("DonationViewSet", "refund"),
+    ("VacancyViewSet", "open"),
+    ("VacancyViewSet", "close"),
+    ("CandidacyViewSet", "screen"),
+    ("InterviewViewSet", "reschedule"),
+    ("InterviewViewSet", "cancel"),
+    ("InterviewViewSet", "outcome"),
+    ("JobOfferViewSet", "withdraw"),
+    ("JobOfferViewSet", "respond"),
+    ("JobPostingViewSet", "review"),
+    ("JobPostingViewSet", "close"),
 }
 
 # Collections where an empty request legitimately returns nothing for the
@@ -1072,7 +1197,9 @@ NO_RECORD_INPUT = {
 # NotificationViewSet/MessageThreadViewSet are scoped to "am I the recipient/a
 # participant", not to a permission code, and the attacker fixture is neither.
 # The leak checks still run either way.
-LIST_NEEDS_INPUT = {"ReportCardViewSet", "NotificationViewSet", "MessageThreadViewSet"}
+LIST_NEEDS_INPUT = {"ReportCardViewSet", "NotificationViewSet", "MessageThreadViewSet",
+                    # "My uploads": scoped to the uploader, not a permission.
+                    "StoredFileViewSet"}
 
 # Writable nested serializers with no record ids inside, so there is nothing
 # to smuggle. Ones that do carry ids are attacked by hand (NESTED_ATTACKS).

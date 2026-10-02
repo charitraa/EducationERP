@@ -4,6 +4,9 @@ A viewset whose ``serializer_class`` is read-only, with ``create()`` reading
 another serializer, gets no request body in the schema unless it says so —
 and a client generated from the schema then can't call it.
 """
+import os
+
+from django.core.management import call_command
 from django.test import SimpleTestCase
 from drf_spectacular.generators import SchemaGenerator
 
@@ -31,3 +34,11 @@ class RequestBodyTests(SimpleTestCase):
                 self.assertIsNotNone(body, f"{path} documents no request body")
                 ref = body["content"]["application/json"]["schema"]["$ref"].split("/")[-1]
                 self.assertEqual(set(components[ref]["properties"]), fields)
+
+
+class SchemaWarningTests(SimpleTestCase):
+    def test_schema_generates_without_warnings(self):
+        # An unpinned enum name collision (Kind19bEnum and the like) is only a
+        # warning; pin it in ENUM_NAME_OVERRIDES instead of letting it through.
+        with open(os.devnull, "w") as devnull:
+            call_command("spectacular", "--validate", "--fail-on-warn", "--file", os.devnull, stderr=devnull)

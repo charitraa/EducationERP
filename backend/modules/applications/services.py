@@ -18,7 +18,7 @@ from core.audit.services import log
 from core.common.exceptions import ConflictError, PermissionDeniedError, ServiceError
 from core.permissions.models import Permission
 from core.permissions.selectors import campus_ids_with_permission, users_holding
-from modules.notifications.services import notify
+from modules.notifications.services import notify, notify_address
 from modules.parents.selectors import links_for_parent, parent_for_user
 from modules.students.selectors import get_current_enrollment
 
@@ -45,7 +45,8 @@ def _next_number(organization_id: int, prefix: str, model) -> str:
 
     with transaction.atomic():
         Organization.objects.select_for_update().get(pk=organization_id)
-        count = model.objects.filter(organization_id=organization_id).count()
+        # Deleted rows too, or a freed number would be issued again.
+        count = model.all_objects.filter(organization_id=organization_id).count()
         return f"{prefix}{count + 1:06d}"
 
 
@@ -160,6 +161,10 @@ def _tell_applicant(application: Application, title: str, body: str = "") -> Non
         people.add(application.staff.user)
     notify(people, event_type=f"applications.{application.status}", title=title, body=body,
            data={"application": application.pk}, organization_id=application.organization_id)
+    if application.applicant_id is None and application.token_hash:
+        # A public applicant has no account; reach them at the contact they gave.
+        notify_address(email=application.contact_email, phone=application.contact_phone,
+                       title=f"{title} ({application.number})", body=body)
 
 
 def submit(*, application_type, campus, raw_data, by=None, student=None, staff=None, contact=None,

@@ -12,6 +12,7 @@ urlpatterns = [
     path("", include("core.accounts.urls")),
     path("", include("core.permissions.urls")),
     path("", include("core.audit.urls")),
+    path("", include("core.files.urls")),
     path("", include("modules.students.urls")),
     path("", include("modules.parents.urls")),
     path("", include("modules.staff.urls")),
@@ -34,4 +35,7 @@ urlpatterns = [
     path("", include("modules.transport.urls")),
     # Phase 13
     path("", include("modules.applications.urls")),
+    # Phase 14
+    path("", include("modules.alumni.urls")),
+    path("", include("modules.careers.urls")),
 ]

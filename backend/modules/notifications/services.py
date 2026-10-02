@@ -39,6 +39,15 @@ def notify(recipients, *, event_type: str, title: str, body: str = "", data: dic
     return rows
 
 
+def notify_address(*, email: str = "", phone: str = "", title: str, body: str = "") -> None:
+    """For someone with no account (a public applicant): email and SMS only,
+    as there is no inbox to put an in-app notification in."""
+    if email:
+        email_backend.send(to=email, subject=title, body=body)
+    if phone:
+        sms_backend.send(to=phone, message=f"{title}: {body}" if body else title)
+
+
 def mark_read(notification: Notification) -> Notification:
     if notification.is_read:
         return notification

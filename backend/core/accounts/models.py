@@ -29,6 +29,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel, SoftDeleteModel
         TEACHER = "teacher", "Teacher"
         STAFF = "staff", "Staff"
         ADMINISTRATOR = "administrator", "Administrator"
+        # A graduate keeps their login (Phase 14); set on graduation.
+        ALUMNI = "alumni", "Alumni"
 
     email = models.EmailField(unique=True, db_index=True)
     phone = models.CharField(max_length=32, blank=True, db_index=True)

@@ -25,7 +25,8 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 REST_FRAMEWORK = {  # noqa: F405
     **BASE_REST_FRAMEWORK,
     "DEFAULT_THROTTLE_RATES": {"login": "10000/min", "anon": "10000/min", "user": "10000/min",
-                               "device": "10000/min", "public_applications": "10000/min"},
+                               "device": "10000/min", "public_applications": "10000/min",
+                               "uploads": "10000/min"},
 }
 
 # Like the throttles above: effectively off, so tests that log in often don't
@@ -33,3 +34,13 @@ REST_FRAMEWORK = {  # noqa: F405
 LOGIN_LOCKOUT_ATTEMPTS = 10000
 
 LOGGING = {"version": 1, "disable_existing_loggers": False, "root": {"handlers": []}}
+
+# Uploads go to a throwaway directory, never the project's private/ folder.
+import tempfile  # noqa: E402
+
+PRIVATE_MEDIA_ROOT = tempfile.mkdtemp(prefix="erp-test-private-")
+STORAGES = {  # noqa: F405
+    **STORAGES,  # noqa: F405
+    "private": {"BACKEND": "django.core.files.storage.FileSystemStorage",
+                "OPTIONS": {"location": PRIVATE_MEDIA_ROOT, "base_url": None}},
+}

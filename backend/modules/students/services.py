@@ -13,6 +13,7 @@ from core.audit.services import log, snapshot
 from core.common.exceptions import ConflictError, ServiceError
 
 from .models import Enrollment, Student
+from .signals import student_graduated
 
 # Which status a student may move to from each status. Graduated and
 # withdrawn are final: a returning student comes back through a new admission.
@@ -153,16 +154,16 @@ def change_student_status(
         )
 
     before = student.status
+    closed = None
     if status in _CLOSING_STATUS:
-        _close(
-            _open_enrollment(student),
-            _CLOSING_STATUS[status],
-            on_date or timezone.localdate(),
-            reason,
-        )
+        closed = _open_enrollment(student)
+        _close(closed, _CLOSING_STATUS[status], on_date or timezone.localdate(), reason)
 
     student.status = status
     student.save(update_fields=["status", "updated_at"])
+    if status == Student.Status.GRADUATED:
+        student_graduated.send(sender=Student, student=student, enrollment=closed,
+                               on_date=on_date or timezone.localdate(), by=by)
 
     log(
         AuditLog.Action.UPDATE,

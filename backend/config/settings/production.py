@@ -55,7 +55,7 @@ CACHES = {
 # WhiteNoise serves .br/.gz without doing it per request. Requires
 # collectstatic to have run — the entrypoint does it on boot.
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    **STORAGES,  # noqa: F405  (keeps "private", see base.py)
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
     },

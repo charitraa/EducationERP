@@ -1,6 +1,6 @@
 """Applications: one workflow engine for every kind of request a school
 handles — admission, staff leave, scholarship, hostel, transport, event,
-certificate, and anything else ("general").
+certificate, a job (Phase 14 careers), and anything else ("general").
 
 An organization configures **ApplicationTypes**: a kind, optional extra
 questions, and ordered **approval steps**, each naming a permission. An
@@ -28,7 +28,12 @@ class Kind(models.TextChoices):
     TRANSPORT = "transport", "Transport"
     EVENT = "event", "Event participation"
     CERTIFICATE = "certificate", "Certificate"
+    JOB = "job", "Job application"
     GENERAL = "general", "General request"
+
+
+# Forms anyone may fill in without an account.
+PUBLIC_KINDS = [Kind.ADMISSION, Kind.JOB]
 
 
 class ApplicationType(OrganizationOwnedModel):
@@ -39,7 +44,7 @@ class ApplicationType(OrganizationOwnedModel):
     campus = models.ForeignKey("organizations.Campus", null=True, blank=True, on_delete=models.PROTECT,
                                related_name="+", help_text="Empty: open at every campus.")
     is_public = models.BooleanField(default=False,
-                                    help_text="Admission only: accept submissions without an account.")
+                                    help_text="Admission and job only: accept submissions without an account.")
     is_active = models.BooleanField(default=True, db_index=True)
     fields = models.JSONField(default=list, blank=True,
                               help_text="Extra questions: [{name, label, type, required, choices}].")
@@ -52,8 +57,8 @@ class ApplicationType(OrganizationOwnedModel):
         constraints = [
             models.UniqueConstraint(fields=["organization", "code"], condition=ALIVE,
                                     name="uniq_application_type_code"),
-            models.CheckConstraint(condition=Q(is_public=False) | Q(kind="admission"),
-                                   name="application_type_public_admission_only"),
+            models.CheckConstraint(condition=Q(is_public=False) | Q(kind__in=["admission", "job"]),
+                                   name="application_type_public_kinds"),
         ]
 
     def __str__(self):

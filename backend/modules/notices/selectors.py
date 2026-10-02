@@ -8,7 +8,8 @@ from modules.students.selectors import student_for_user
 
 from .models import Notice, NoticeAudience
 
-_AUDIENCE_FOR_USER_TYPE = {"student": NoticeAudience.STUDENTS, "parent": NoticeAudience.PARENTS}
+_AUDIENCE_FOR_USER_TYPE = {"student": NoticeAudience.STUDENTS, "parent": NoticeAudience.PARENTS,
+                           "alumni": NoticeAudience.ALUMNI}
 
 
 def visible_to(user):

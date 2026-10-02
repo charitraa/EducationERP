@@ -167,6 +167,66 @@ class CertificateData(KindData):
     purpose = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
 
 
+class EducationEntry(serializers.Serializer):
+    institution = serializers.CharField(max_length=200)
+    qualification = serializers.CharField(max_length=150)
+    year = serializers.IntegerField(min_value=1900, max_value=2200, required=False, allow_null=True)
+    score = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+
+
+class ExperienceEntry(serializers.Serializer):
+    employer = serializers.CharField(max_length=200)
+    title = serializers.CharField(max_length=150)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField(required=False, allow_null=True)
+    description = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs.get("end_date") and attrs["end_date"] < attrs["start_date"]:
+            raise serializers.ValidationError({"end_date": "Can't end before it starts."})
+        return attrs
+
+
+class ResumeData(serializers.Serializer):
+    """The structured résumé; a file can come with it (careers)."""
+
+    summary = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+    education = EducationEntry(many=True, required=False, default=list, max_length=20)
+    experience = ExperienceEntry(many=True, required=False, default=list, max_length=30)
+    skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, default=list,
+                                   max_length=50)
+
+
+class JobData(KindData):
+    first_name = serializers.CharField(max_length=150)
+    middle_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True, default="")
+    phone = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    gender = serializers.ChoiceField(choices=Gender.choices, required=False, allow_blank=True, default="")
+    address = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+    cover_letter = serializers.CharField(max_length=5000, required=False, allow_blank=True, default="")
+    expected_salary = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    available_from = serializers.DateField(required=False, allow_null=True)
+    resume = ResumeData(required=False)
+
+    def validate_date_of_birth(self, value):
+        if value is not None and value >= timezone.localdate():
+            raise serializers.ValidationError("Must be in the past.")
+        return value
+
+    def validate(self, attrs):
+        if not attrs.get("email") and not attrs.get("phone"):
+            raise serializers.ValidationError("Give an email or a phone number to be reached at.")
+        attrs["resume"] = attrs.get("resume") or {"summary": "", "education": [], "experience": [], "skills": []}
+        return attrs
+
+
+class JobDecision(KindData):
+    employee_number = serializers.CharField(max_length=32, help_text="The new staff member's number.")
+
+
 class GeneralData(KindData):
     subject = serializers.CharField(max_length=200)
     details = serializers.CharField(required=False, allow_blank=True, default="")
@@ -265,6 +325,12 @@ def fulfil_certificate(application, decision, by):
     return ({"type": "applications.certificate", "id": certificate.pk}, f"Certificate {certificate.number} issued.")
 
 
+def fulfil_job(application, decision, by):
+    from modules.careers.services import hire
+
+    return hire(application, decision, by)
+
+
 def fulfil_nothing(application, decision, by):
     return {}, "Approved."
 
@@ -276,6 +342,9 @@ class KindSpec:
     fulfil: object
     final_permission: str | None = None
     decision: type | None = None
+    # False: submitted only through its own module (a job, through careers
+    # vacancies), never the generic form.
+    direct: bool = True
 
 
 KINDS = {
@@ -286,6 +355,7 @@ KINDS = {
     "transport": KindSpec("student", TransportData, fulfil_transport, "transport.manage"),
     "event": KindSpec("student", EventData, fulfil_event, "events.manage"),
     "certificate": KindSpec("student", CertificateData, fulfil_certificate, "applications.certify"),
+    "job": KindSpec("none", JobData, fulfil_job, "careers.hire", JobDecision, direct=False),
     "general": KindSpec("any", GeneralData, fulfil_nothing, None),
 }
 
@@ -355,6 +425,15 @@ def clean_extra(definitions, raw) -> dict:
     return answers
 
 
+def _json_safe(value):
+    """Dates (also nested, e.g. a résumé's experience) as ISO strings."""
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
 def clean_data(application_type, raw, *, campus, student=None, staff=None) -> dict:
     """Validate ``raw`` for the type's kind; returns JSON-safe data."""
     if not isinstance(raw, dict):
@@ -364,7 +443,7 @@ def clean_data(application_type, raw, *, campus, student=None, staff=None) -> di
                                               "campus": campus, "student": student, "staff": staff})
     if not serializer.is_valid():
         raise serializers.ValidationError({"data": serializer.errors})
-    data = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in serializer.validated_data.items()}
+    data = _json_safe(dict(serializer.validated_data))
     data["extra"] = clean_extra(application_type.fields, raw.get("extra"))
     return data
 

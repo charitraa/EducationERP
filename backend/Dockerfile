@@ -49,8 +49,8 @@ COPY --chown=app:app . /app
 
 # Created before dropping privileges, because the process writes to all three
 # at runtime (LOG_DIR in particular is opened on the first 500).
-RUN mkdir -p /app/logs /app/staticfiles /app/media \
-    && chown -R app:app /app/logs /app/staticfiles /app/media \
+RUN mkdir -p /app/logs /app/staticfiles /app/media /app/private \
+    && chown -R app:app /app/logs /app/staticfiles /app/media /app/private \
     && chmod +x /app/docker/entrypoint.sh
 
 USER app

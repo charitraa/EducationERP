@@ -9,7 +9,7 @@ from modules.students.models import Student
 
 from . import services
 from .kinds import KINDS, check_field_definitions
-from .models import Application, ApplicationEvent, ApplicationType, ApprovalStep, Certificate
+from .models import PUBLIC_KINDS, Application, ApplicationEvent, ApplicationType, ApprovalStep, Certificate
 
 
 class OwnedInput(serializers.Serializer):
@@ -65,8 +65,8 @@ class ApplicationTypeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         kind = attrs.get("kind", getattr(self.instance, "kind", None))
-        if attrs.get("is_public", getattr(self.instance, "is_public", False)) and kind != "admission":
-            raise serializers.ValidationError({"is_public": "Only an admission form can be public."})
+        if attrs.get("is_public", getattr(self.instance, "is_public", False)) and kind not in PUBLIC_KINDS:
+            raise serializers.ValidationError({"is_public": "Only an admission or job form can be public."})
         if "steps" in attrs or self.instance is None or "kind" in attrs:
             steps = attrs.get("steps")
             if steps is None:

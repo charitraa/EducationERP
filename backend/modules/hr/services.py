@@ -77,6 +77,25 @@ def current_contract(staff, on: Date | None = None) -> Contract | None:
             .first())
 
 
+def start_contract(*, staff, kind: str, start_date: Date, position=None, department=None, end_date=None,
+                   probation_ends_on=None, reference: str = "", notes: str = "", by=None) -> Contract:
+    """A new contract for someone just hired (careers). The office adds and
+    edits contracts through the API, whose serializer applies the same
+    rules."""
+    if end_date is not None and end_date < start_date:
+        raise ServiceError("A contract can't end before it starts.", code="before_start")
+    clash = overlapping_contracts(staff, start_date, end_date).first()
+    if clash is not None:
+        raise ConflictError(f"Overlaps another contract ({clash.start_date}–{clash.end_date or 'open'}).",
+                            code="overlapping_contract")
+    contract = Contract.objects.create(
+        organization_id=staff.organization_id, staff=staff, kind=kind, position=position, department=department,
+        start_date=start_date, end_date=end_date, probation_ends_on=probation_ends_on, reference=reference,
+        notes=notes)
+    log(AuditLog.Action.CREATE, instance=contract, module=MODULE, actor=by)
+    return contract
+
+
 def end_contract(contract: Contract, *, end_date: Date, reason: str = "", by=None) -> Contract:
     if contract.end_date is not None and contract.end_date <= end_date:
         raise ConflictError("This contract already ends on or before that date.", code="already_ended")

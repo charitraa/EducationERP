@@ -57,6 +57,7 @@ CORE_APPS = [
     "core.permissions",
     "core.audit",
     "core.authentication",
+    "core.files",
 ]
 
 # Business modules, in dependency order: each may use the ones above it.
@@ -82,6 +83,8 @@ MODULE_APPS: list[str] = [
     "modules.hostel",
     "modules.transport",
     "modules.applications",
+    "modules.alumni",
+    "modules.careers",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + CORE_APPS + MODULE_APPS
@@ -165,6 +168,19 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Uploaded files (résumés and the like) are private: they live outside
+# MEDIA_ROOT, have no URL of their own, and are only served by the API after
+# an access check (core/files). Swap the "private" backend for S3-compatible
+# storage later without touching the modules.
+PRIVATE_MEDIA_ROOT = config("PRIVATE_MEDIA_ROOT", default="") or str(BASE_DIR / "private")
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    "private": {"BACKEND": "django.core.files.storage.FileSystemStorage",
+                "OPTIONS": {"location": PRIVATE_MEDIA_ROOT, "base_url": None}},
+}
+FILE_UPLOAD_MAX_BYTES = config("FILE_UPLOAD_MAX_BYTES", default=5 * 1024 * 1024, cast=int)
+
 # --------------------------------------------------------------------------
 # CORS / CSRF
 # The SPA is served from its own origin, so the browser preflights every API
@@ -237,6 +253,8 @@ REST_FRAMEWORK = {
         "device": config("THROTTLE_DEVICE", default="120/min"),
         # Public application forms (no account): per address.
         "public_applications": config("THROTTLE_PUBLIC_APPLICATIONS", default="20/hour"),
+        # File uploads, per user.
+        "uploads": config("THROTTLE_UPLOADS", default="30/hour"),
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -332,9 +350,27 @@ SPECTACULAR_SETTINGS = {
         "TripStatusEnum": "modules.transport.models.TripStatus",
         "BoardingStatusEnum": "modules.transport.models.BoardingStatus",
         "VehicleMaintenanceKindEnum": "modules.transport.models.MaintenanceKind",
+        "ConditionEnum": "modules.inventory.models.AssetCondition",
+        "AssetMaintenanceKindEnum": "modules.inventory.models.MaintenanceKind",
+        "DisposalMethodEnum": "modules.inventory.models.DisposalMethod",
         "ApplicationKindEnum": "modules.applications.models.Kind",
         "ApplicationStatusEnum": "modules.applications.models.Status",
         "ApplicationEventActionEnum": "modules.applications.models.EventAction",
+        "StudyStatusEnum": "modules.alumni.models.StudyStatus",
+        "AlumniEventStatusEnum": "modules.alumni.models.EventStatus",
+        "RsvpResponseEnum": "modules.alumni.models.RsvpResponse",
+        "MentorshipStatusEnum": "modules.alumni.models.MentorshipStatus",
+        "VacancyStatusEnum": "modules.careers.models.VacancyStatus",
+        "InterviewModeEnum": "modules.careers.models.InterviewMode",
+        "InterviewStatusEnum": "modules.careers.models.InterviewStatus",
+        "RecommendationEnum": "modules.careers.models.Recommendation",
+        "OfferStatusEnum": "modules.careers.models.OfferStatus",
+        "PostingKindEnum": "modules.careers.models.PostingKind",
+        "PostingAudienceEnum": "modules.careers.models.Audience",
+        "PostingStatusEnum": "modules.careers.models.PostingStatus",
+        "AudienceEnum": "modules.notices.models.NoticeAudience",
+        "StaffTypeEnum": "modules.staff.models.StaffMember.StaffType",
+        "UserTypeEnum": "core.accounts.models.User.Type",
     },
 }
 

@@ -402,3 +402,25 @@ class PublicAdmissionTests(ApplicationsTestCase):
         response = self.submit(visitor, self.form, {"first_name": "Gita", "last_name": "KC"}, campus=self.campus.pk)
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["subject_name"], "Gita KC")
+
+    def test_public_applicant_is_emailed_each_decision(self):
+        from unittest import mock
+
+        response = self.public(application_type=self.form.pk, campus=self.campus.pk,
+                               contact={"name": "Hari Thapa", "email": "hari@example.com"},
+                               data={"first_name": "Sita", "last_name": "Thapa"})
+        number = response.data["number"]
+        pk = Application.objects.get(number=number).pk
+        with mock.patch("integrations.email.base.send") as send:
+            self.act(self.office, pk, "send-back", note="Add date of birth")
+        sent = [c.kwargs for c in send.call_args_list if c.kwargs["to"] == "hari@example.com"]
+        self.assertEqual(len(sent), 1)
+        self.assertIn(number, sent[0]["subject"])
+        self.assertEqual(sent[0]["body"], "Add date of birth")
+
+    def test_numbers_are_not_reused_after_a_delete(self):
+        body = {"application_type": self.form.pk, "campus": self.campus.pk,
+                "contact": {"name": "X", "phone": "9800000001"}, "data": {"first_name": "A", "last_name": "B"}}
+        first = self.public(**body).data["number"]
+        Application.objects.get(number=first).delete()
+        self.assertNotEqual(self.public(**body).data["number"], first)

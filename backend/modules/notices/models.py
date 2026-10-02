@@ -17,6 +17,7 @@ class NoticeAudience(models.TextChoices):
     STUDENTS = "students", "Students"
     PARENTS = "parents", "Parents"
     STAFF = "staff", "Staff"
+    ALUMNI = "alumni", "Alumni"
 
 
 class Notice(OrganizationOwnedModel):

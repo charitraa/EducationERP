@@ -121,7 +121,9 @@ class ItemViewSet(OrganizationScopedViewSet):
     required_permissions = {**READ, **WRITE}
 
     def get_queryset(self):
-        return super().get_queryset().annotate(total_stock=Coalesce(Sum("levels__quantity"), 0))
+        # Explicit order: Django drops Meta.ordering from a GROUP BY query, which would page unstably.
+        return (super().get_queryset().annotate(total_stock=Coalesce(Sum("levels__quantity"), 0))
+                .order_by(*Item._meta.ordering))
 
     def perform_destroy(self, instance):
         if (instance.levels.exists() or instance.movements.exists() or instance.assets.exists()

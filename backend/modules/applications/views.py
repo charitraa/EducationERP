@@ -39,6 +39,8 @@ from .serializers import (
 from .services import CERTIFY, MANAGE, VIEW
 
 TAG = "applications"
+# Kinds submitted through the generic forms; a job goes through careers.
+DIRECT_KINDS = [kind for kind, spec in KINDS.items() if spec.direct]
 PUBLIC_TAG = "public applications"
 
 
@@ -99,7 +101,7 @@ class ApplicationTypeViewSet(OrganizationScopedViewSet):
     @action(detail=False, methods=["get"])
     def available(self, request):
         qs = (ApplicationType.objects.filter(organization_id=request.user.organization_id, is_active=True)
-              .prefetch_related("steps"))
+              .filter(kind__in=DIRECT_KINDS).prefetch_related("steps"))
         return Response(AvailableTypeSerializer(qs, many=True).data)
 
 
@@ -193,6 +195,8 @@ class ApplicationViewSet(OrganizationScopedMixin, mixins.ListModelMixin, mixins.
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         application_type = data["application_type"]
+        if not KINDS[application_type.kind].direct:
+            raise ValidationError({"application_type": "Apply for a job through its vacancy (careers)."})
         student, staff, campus = self._subject(application_type, data.get("student"), data.get("staff"),
                                                data.get("campus"))
         application, _ = services.submit(application_type=application_type, campus=campus, raw_data=data["data"],
@@ -375,8 +379,8 @@ class PublicTypesView(PublicView):
                    responses={200: AvailableTypeSerializer(many=True)})
     def get(self, request, code):
         organization = self.organization(code)
-        qs = ApplicationType.objects.filter(organization=organization, is_public=True,
-                                            is_active=True).prefetch_related("steps")
+        qs = ApplicationType.objects.filter(organization=organization, is_public=True, is_active=True,
+                                            kind__in=DIRECT_KINDS).prefetch_related("steps")
         campuses = Campus.objects.filter(organization=organization, is_active=True).values("id", "name")
         return Response({"organization": organization.name, "campuses": list(campuses),
                          "forms": AvailableTypeSerializer(qs, many=True).data})
@@ -391,7 +395,8 @@ class PublicSubmitView(PublicView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         application_type = ApplicationType.objects.filter(organization=organization, pk=data["application_type"],
-                                                          is_public=True, is_active=True).first()
+                                                          is_public=True, is_active=True,
+                                                          kind__in=DIRECT_KINDS).first()
         if application_type is None:
             raise ValidationError({"application_type": "Unknown form."})
         campus = Campus.objects.filter(organization=organization, pk=data["campus"], is_active=True).first()
