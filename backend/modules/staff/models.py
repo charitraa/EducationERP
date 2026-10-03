@@ -11,7 +11,7 @@ class StaffMember(OrganizationOwnedModel):
 
     The staff directory. Job titles live in ``designation`` as free text, so
     each institution uses its own ("HOD", "Lab Assistant", "Driver") without a
-    schema change. Contracts, departments and payroll arrive with HR (Phase 11),
+    schema change. Contracts, departments and payroll arrive with HR,
     which extends this record rather than replacing it.
     """
 

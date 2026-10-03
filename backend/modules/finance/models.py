@@ -1,6 +1,6 @@
 """Finance: what a student owes, and what they've paid.
 
-One fee policy for the whole organization (like Phase 5's grading), split by
+One fee policy for the whole organization (like the examinations module's grading), split by
 program, level and academic year — a **FeeStructure**'s **FeeStructureItem**s
 say what each category (tuition, admission, exam fee, …) costs and how often
 it's billed.

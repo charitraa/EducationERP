@@ -1,12 +1,12 @@
-# Phase 3a — Academic Structure
+# Academic Structure
 
 What is taught, when, where and to which groups, and which group each
 student is in. It also records students' electives and promotes whole
-classes. Phase 3b adds the timetable on top of this: see
-[`phase-3b.md`](phase-3b.md).
+classes. The timetable module builds on this: see
+[`timetable.md`](timetable.md).
 
-Follows the conventions in [`phase-1.md`](phase-1.md) and
-[`phase-2.md`](phase-2.md).
+Follows the conventions in [`identity.md`](identity.md) and
+[`students.md`](students.md).
 
 ---
 
@@ -215,7 +215,7 @@ failed and why. Needs `students.place`.
 - `role`: `lecture` (default), `practical`, `tutorial` or `co_teaching`. One
   subject can have several teachers; a teacher can hold several roles.
 - `periods_per_week` (optional, 1–60): how many lessons a week. The timetable
-  generator fills up to this number ([`phase-3b.md`](phase-3b.md)).
+  generator fills up to this number ([`timetable.md`](timetable.md)).
 - `is_active`: false once handed over. Kept as a record, with no new
   lessons. An assignment whose lessons have run can't be deleted, only
   retired.
@@ -224,7 +224,7 @@ failed and why. Needs `students.place`.
 
 `/api/v1/calendar/`: holidays, closures, exams, events and make-up days, for
 every campus or one, optionally one program and grade. See
-[`phase-3b.md`](phase-3b.md#the-academic-calendar) for how the timetable
+[`timetable.md`](timetable.md#the-academic-calendar) for how the timetable
 uses it.
 
 ## Staff leaving
@@ -233,4 +233,4 @@ Marking a staff member `left` is refused while they have lessons, planned
 cover, or a class-teacher role from the leaving date on. Hand the work over
 first.
 
-All real-life situations and their tests: [`phase-3-real-life.md`](phase-3-real-life.md).
+All real-life situations and their tests: [`academics-real-life.md`](academics-real-life.md).

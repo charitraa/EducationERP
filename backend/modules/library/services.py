@@ -307,7 +307,7 @@ def waive_fine(fine: Fine, reason: str, *, by=None) -> Fine:
 
 
 def _notify_reservation_ready(reservation: Reservation) -> None:
-    """``ReservationReady`` (claude.md section 26): tell the member a copy
+    """``ReservationReady``: tell the member a copy
     is being held for them, and until when."""
     from modules.notifications.services import notify
 

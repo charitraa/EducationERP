@@ -1,7 +1,8 @@
-# Phase 1 — Identity Foundation
+# Identity: organizations, users, roles and permissions
 
-Reference for the models, rules and conventions established in Phase 1.
-Phase 2 modules should follow these rather than inventing new patterns.
+The platform every module builds on: organizations, campuses, users, roles,
+permissions, authentication and the audit log. Every module follows the
+conventions here rather than inventing new patterns.
 
 ---
 
@@ -53,7 +54,7 @@ A bundle of permissions. `organization = NULL` + `is_system = True` means a
 platform-shipped role that no tenant can edit or delete. Organizations define
 their own roles alongside them.
 
-Phase 1 system roles: `org-admin` (all permissions, re-expanded on every sync
+System roles: `org-admin` (all permissions, re-expanded on every sync
 so new modules are included automatically), `campus-admin`, `staff`,
 `student`, `parent`.
 
@@ -69,7 +70,7 @@ repr, a `{field: {before, after}}` diff, IP, user agent and request path.
 
 ---
 
-## Permission catalogue (Phase 1)
+## Permission catalogue
 
 ```
 organizations.view    organizations.update
@@ -83,9 +84,9 @@ audit.view
 
 ---
 
-### Changes after Phase 1
+### Hardening
 
-Hardening done before Phase 2 started:
+Security hardening on top of the basics:
 
 - **No self-promotion.** `ensure_can_grant` (accounts services): a role can be
   granted or revoked only by someone holding all its permissions, at the same
@@ -105,7 +106,7 @@ Hardening done before Phase 2 started:
   Job titles moved to `StaffMember.designation`; migration `accounts.0003`
   folds old accountant / hr / librarian values into staff.
 
-## Conventions for Phase 2 and beyond
+## Conventions for every module
 
 ### Adding a module
 
@@ -164,14 +165,11 @@ a later service extraction possible.
 
 ## Known gaps (deliberate)
 
-Not in Phase 1; add when the need is real:
+Not built; add when the need is real:
 
-- **2FA and device/session management** — the spec lists these under long-term
-  security. JWT + refresh rotation + blacklisting is the Phase 1 baseline.
-- **Password reset by email** — needs a mail transport decision. Administrative
-  reset via `POST /users/{id}/set-password/` covers the gap.
-- **File storage (`core/files/`)** — not required until modules have documents
-  to store (Phase 2+). Belongs in object storage, not the database.
-- **Rate limiting beyond login** — only the login endpoint is throttled.
-- **Redis, Celery, WebSockets** — deferred by design. Docker packaging was
-  added afterwards for onboarding and deployment; see the README.
+- **Session management.** Two-factor login, lockout and signing out
+  everywhere on password reset exist, but there is no list of a user's
+  active sessions to revoke one by one.
+- **Celery and WebSockets.** Deferred by design: notifications and
+  bulk jobs run synchronously, and scheduled work (late fees, purging
+  signups) is a management command or an explicit action.

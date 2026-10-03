@@ -1,9 +1,9 @@
-# Phase 4 — Attendance
+# Attendance
 
 Student attendance (a daily roll call for schools, every lesson for
 colleges), staff attendance, and one engine behind every way of taking it:
 the teacher's app, the office, QR codes, biometric devices and the API.
-Everything follows the conventions in [`phase-1.md`](phase-1.md).
+Everything follows the conventions in [`identity.md`](identity.md).
 
 ```
 Teacher app ─┐                 ZKTeco (push) ─┐
@@ -250,10 +250,10 @@ PINs that aren't mapped yet. Rate limit: `THROTTLE_DEVICE` per device.
 ## Not built (by choice, for now)
 
 - **Leave requests and approval** (students and staff). A day or record can
-  be set to leave by hand. The request workflow belongs with HR (Phase 11)
-  and communication (Phase 8).
+  be set to leave by hand. The request workflow belongs with HR
+  and communication.
 - **Notifications** ("your child was absent"). These need the notification
-  service (Phase 8). `AttendanceMarked` is the event to publish.
+  service. `AttendanceMarked` is the event to publish.
 - **Face recognition.** It would be another adapter under
   `integrations/biometric/`, sending punches like the others.
 - **Other device brands' own protocols** (Hikvision, eSSL, …). They can use

@@ -94,7 +94,7 @@ class TimetableEntry(OrganizationOwnedModel):
     """A weekly lesson: this teaching assignment meets in this period on
     this weekday. With a ``term`` it only runs that term; without, all year.
 
-    Attendance (Phase 4) is taken against these.
+    Attendance is taken against these.
     """
 
     teaching_assignment = models.ForeignKey(

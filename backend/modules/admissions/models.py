@@ -36,7 +36,7 @@ class Admission(OrganizationOwnedModel):
     applying_for = models.CharField(
         max_length=200,
         blank=True,
-        help_text="Program or grade applied for. Becomes a link to a program in Phase 3.",
+        help_text="Program or grade applied for. Becomes a link to a program in the academics module.",
     )
 
     first_name = models.CharField(max_length=150)

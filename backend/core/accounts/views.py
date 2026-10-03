@@ -36,7 +36,7 @@ class UserViewSet(OrganizationScopedViewSet):
     """User accounts within an organization.
 
     Students, parents, teachers and staff are all users here; the profile data
-    specific to each arrives with the Phase 2 modules.
+    specific to each lives in the students, parents and staff modules.
     """
 
     # API keys' integration users are managed through /api-keys/ only.

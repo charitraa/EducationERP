@@ -193,7 +193,7 @@ GRANT ALL PRIVILEGES ON education_erp.* TO 'education_erp'@'localhost';
 ```bash
 cd backend
 source ../.venv/bin/activate          # or: python3 -m venv .venv
-pip install -r requirements-dev.txt   # includes the MySQL driver (needs the MySQL/MariaDB client library)
+pip install -r requirements.txt       # includes the MySQL driver (needs the MySQL/MariaDB client library)
 
 cp .env.example .env                  # then set SECRET_KEY and DB_PASSWORD
 python manage.py migrate
@@ -584,7 +584,7 @@ Client sends:  Authorization: Bearer <access token>
 ```
 
 **Programs** use an API key instead: `Authorization: Api-Key erp_...`. A key
-has its own roles, like a person — see [`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md).
+has its own roles, like a person — see [`docs/modules/api-keys.md`](docs/modules/api-keys.md).
 
 **Login:** `POST /auth/login/` returns an **access** token (valid 60 minutes),
 a **refresh** token (7 days) and the user's roles and permissions. When the
@@ -596,7 +596,7 @@ logout is written to the audit log.
 `POST /auth/password-reset/confirm/` sets the new password and signs the
 account out everywhere. **New organizations** can sign themselves up
 (`POST /signup/`, when `SIGNUP_ENABLED` is on): the organization is created
-once the emailed link is opened. See [`docs/saas-2-signup.md`](docs/saas-2-signup.md).
+once the emailed link is opened. See [`docs/modules/signup.md`](docs/modules/signup.md).
 
 ### Security
 
@@ -880,7 +880,8 @@ backend/
 │   ├── permissions/   Permission, Role, UserRole + registry and selectors
 │   ├── audit/         AuditLog, context middleware, audit services
 │   ├── api_keys/      ApiKey: integration identities with roles, Api-Key auth
-│   └── files/         StoredFile: private uploads, type checks, access registry
+│   ├── files/         StoredFile: private uploads, type checks, access registry
+│   └── signup/        public signup, email verification, password reset
 ├── modules/           business modules
 │   ├── students/      Student, Enrollment
 │   ├── parents/       Parent, StudentParent
@@ -919,9 +920,9 @@ backend/
 │   └── careers/       Vacancy, Candidacy, Interview, JobOffer, JobPosting
 ├── integrations/
 │   ├── biometric/     ZKTeco and generic device adapters
-│   ├── email/  sms/  push/  console-logging stubs; notifications.services.notify
-│   │                  is the only caller
-│   └── payment/       (empty — a real gateway is a later decision)
+│   ├── email/  sms/  push/  one send() each; notifications.services.notify
+│   │                  is the usual caller. Email can really send (EMAIL_DELIVERY)
+│   └── captcha/       Turnstile, hCaptcha or reCAPTCHA check for public forms
 └── tests/             shared factories, base test case, cross-cutting tests
 ```
 
@@ -987,23 +988,23 @@ prod behave identically.
 
 | Area | Document |
 |---|---|
-| Organizations, campuses, users, roles, permissions, audit log | [`docs/phase-1.md`](docs/phase-1.md) |
-| Students, parents, staff, admissions | [`docs/phase-2.md`](docs/phase-2.md) |
-| Programs, subjects, classes, calendar | [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3-real-life.md`](docs/phase-3-real-life.md) |
-| Timetable | [`docs/phase-3b.md`](docs/phase-3b.md) |
-| Attendance and devices | [`docs/phase-4.md`](docs/phase-4.md) |
-| Exams and results | [`docs/phase-5.md`](docs/phase-5.md) |
-| Fees | [`docs/phase-6.md`](docs/phase-6.md) |
-| Events and points | [`docs/phase-7.md`](docs/phase-7.md) |
-| Notices, notifications, messages, support | [`docs/phase-8.md`](docs/phase-8.md) |
-| Library | [`docs/phase-9.md`](docs/phase-9.md) |
-| Inventory | [`docs/phase-10.md`](docs/phase-10.md) |
-| HR and payroll | [`docs/phase-11.md`](docs/phase-11.md) |
-| Hostel and transport | [`docs/phase-12.md`](docs/phase-12.md) |
-| Applications and certificates | [`docs/phase-13.md`](docs/phase-13.md) |
-| Alumni, careers, file uploads | [`docs/phase-14.md`](docs/phase-14.md) |
-| API keys | [`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md) |
-| Signup and password reset | [`docs/saas-2-signup.md`](docs/saas-2-signup.md) |
+| Organizations, campuses, users, roles, permissions, audit log | [`docs/modules/identity.md`](docs/modules/identity.md) |
+| Students, parents, staff, admissions | [`docs/modules/students.md`](docs/modules/students.md) |
+| Programs, subjects, classes, calendar | [`docs/modules/academics.md`](docs/modules/academics.md), [`docs/modules/academics-real-life.md`](docs/modules/academics-real-life.md) |
+| Timetable | [`docs/modules/timetable.md`](docs/modules/timetable.md) |
+| Attendance and devices | [`docs/modules/attendance.md`](docs/modules/attendance.md) |
+| Exams and results | [`docs/modules/examinations.md`](docs/modules/examinations.md) |
+| Fees | [`docs/modules/finance.md`](docs/modules/finance.md) |
+| Events and points | [`docs/modules/events.md`](docs/modules/events.md) |
+| Notices, notifications, messages, support | [`docs/modules/communication.md`](docs/modules/communication.md) |
+| Library | [`docs/modules/library.md`](docs/modules/library.md) |
+| Inventory | [`docs/modules/inventory.md`](docs/modules/inventory.md) |
+| HR and payroll | [`docs/modules/hr-payroll.md`](docs/modules/hr-payroll.md) |
+| Hostel and transport | [`docs/modules/hostel-transport.md`](docs/modules/hostel-transport.md) |
+| Applications and certificates | [`docs/modules/applications.md`](docs/modules/applications.md) |
+| Alumni, careers, file uploads | [`docs/modules/alumni-careers.md`](docs/modules/alumni-careers.md) |
+| API keys | [`docs/modules/api-keys.md`](docs/modules/api-keys.md) |
+| Signup and password reset | [`docs/modules/signup.md`](docs/modules/signup.md) |
 | Building a frontend | [`docs/frontend-brief.md`](docs/frontend-brief.md), [`docs/api/`](docs/api/) |
 
 Not built yet: bulk import of existing paper or Excel records.

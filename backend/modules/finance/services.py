@@ -390,7 +390,7 @@ def record_payment(invoice: Invoice, *, amount: Decimal, method: str, paid_at: d
 
 
 def _notify_payment_received(invoice: Invoice, payment: Payment) -> None:
-    """``PaymentReceived`` (claude.md section 26): tell the student and their
+    """``PaymentReceived``: tell the student and their
     guardians through the central Notification Service, not by writing into
     another module's tables directly."""
     from modules.notifications.services import notify

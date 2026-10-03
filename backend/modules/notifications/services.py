@@ -1,7 +1,7 @@
 """The one way into notifications. Every module calls ``notify`` the moment
 a business event happens (``StudentEnrolled``, ``PaymentReceived``,
 ``ExamResultPublished``, ...) so a notification rule lives in one place, not
-copied into each module — see claude.md section 26.
+copied into each module.
 """
 from django.db import transaction
 from django.utils import timezone

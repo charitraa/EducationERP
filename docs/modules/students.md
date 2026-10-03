@@ -1,7 +1,7 @@
-# Phase 2 — Student Foundation
+# Students, parents, staff and admissions
 
 Students, enrollments, parents, staff and admissions. Everything here follows
-the conventions in [`phase-1.md`](phase-1.md).
+the conventions in [`identity.md`](identity.md).
 
 ---
 
@@ -53,7 +53,7 @@ Invariant, maintained by the services and backed by the database:
 Constraints: one `active` enrollment per student (partial unique); `ended_on`
 is set exactly when the status is not active; `ended_on >= started_on`.
 
-Phase 3 adds the academic placement (academic year, program, batch, section)
+The academics module adds the academic placement (academic year, program, batch, section)
 to this model. That is why it exists already, rather than being folded into
 `Student`.
 
@@ -66,7 +66,7 @@ contact; making a new one primary unsets the old one in the same transaction.
 The staff directory. `designation` is free text ("HOD", "Driver") so each
 institution names its own positions without schema changes. `status` is
 active, on leave or left; `left_on` is set exactly when the status is left
-(check constraint). HR (Phase 11) extends this record; it doesn't replace it.
+(check constraint). HR extends this record; it doesn't replace it.
 
 ### Admission (`modules/admissions`)
 An application, from receipt to enrollment:
@@ -145,11 +145,11 @@ visible.
 
 ## Design decisions
 
-- **Enrollment without academics.** Phase 3 owns programs and batches. Phase 2's
-  enrollment records the *where and when*, so Phase 3 only adds columns
+- **Enrollment without academics.** The academics module owns programs and batches. Enrollment here
+  records the *where and when*, so academics only adds columns
   instead of reshaping data.
 - **Alumni is not a user type.** Graduation is a status on `Student`. The
-  alumni module (Phase 14) builds on it, with the same person and login.
+  alumni module builds on it, with the same person and login.
 - **Numbers are supplied, not generated.** Duplicates are rejected with a 400
   before the database is reached, which also covers MySQL, where partial
   unique constraints aren't enforced.

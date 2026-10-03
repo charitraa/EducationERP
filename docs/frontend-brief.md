@@ -12,7 +12,7 @@ each person sees, how the API behaves, and what the UI must get right.
 | `docs/api/endpoints.md` | Every endpoint (933), one line each | Paste it too, or the sections for the screen being built |
 | `docs/api/openapi.yaml` | The full contract: every field, type, enum and error | Too big to paste. Give it to the coding tool, or generate a typed client from it (e.g. `openapi-typescript`, `orval`) |
 
-`claude.md` holds backend coding rules; the UI doesn't need it.
+Backend conventions are in `docs/developer-guide.md`; the UI doesn't need it.
 
 After a backend change, regenerate the two API files:
 `cd backend && python manage.py spectacular --file ../docs/api/openapi.yaml && python ../docs/api/make_index.py`
@@ -144,7 +144,7 @@ must hide everything they don't need.
   "branch" not "campus". Show every server `message` as-is: they are
   written for school staff.
 
-Signup and password reset (details in `docs/saas-2-signup.md`):
+Signup and password reset (details in `docs/modules/signup.md`):
 
 - **Sign-up page.** First `GET /signup/config/`. If `enabled` is false,
   hide the page. Otherwise show the CAPTCHA widget it names

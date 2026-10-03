@@ -7,7 +7,7 @@ puts one student or staff member on a route at a stop, from a date until an
 end date — history, never deleted, like ``Enrollment``. A **Trip** is one run
 of a route on a date in one direction (morning pickup, afternoon drop); its
 **TripRecords** say who boarded. These are their own tables, separate from
-Phase 4's class attendance.
+the attendance module's class attendance.
 """
 from django.db import models
 from django.db.models import Q

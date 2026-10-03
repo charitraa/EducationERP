@@ -1,8 +1,8 @@
-# Phase 6 — Finance
+# Finance
 
 Fee structures, invoices, scholarships, payments, receipts and refunds — one
-fee policy for the whole organization, like Phase 5's grading. Everything
-follows the conventions in [`phase-1.md`](phase-1.md).
+fee policy for the whole organization, like the grading scales in examinations. Everything
+follows the conventions in [`identity.md`](identity.md).
 
 ```
 FeeStructure (per program + level + year)
@@ -30,8 +30,8 @@ and reports as data.
 ## Fee structure: one policy, split by program, level and year
 
 A **FeeStructure** belongs to one program, at one level, for one academic
-year — the same shape as a curriculum entry (Phase 3a) or a grade scale
-(Phase 5). Its **FeeStructureItem**s say what each **FeeCategory** (tuition,
+year — the same shape as a curriculum entry or a grade scale
+(examinations). Its **FeeStructureItem**s say what each **FeeCategory** (tuition,
 admission, transport, …) costs and how often it's billed:
 
 - `per_term`: billed every time `generate-invoices` runs for a term.
@@ -47,7 +47,7 @@ A structure's items are locked once any invoice has been generated from it
 
 A **Scholarship** (a percentage or a flat amount, optionally narrowed to one
 category) is a template; a **StudentScholarship** grants it to a student from
-a date, until dropped — history, like Phase 3a's `StudentElective`: dropping
+a date, until dropped — history, like `academics.StudentElective`: dropping
 one ends it rather than deleting the row (`POST
 /student-scholarships/{id}/end/`).
 
@@ -82,7 +82,7 @@ as a `fine` or a plain `adjustment` (`POST /invoices/{id}/add-item/`).
    whole, not against one installment; overpaying is refused. Every payment
    issues a numbered **Receipt** automatically. A **Refund** reverses some or
    all of one payment — appended, never an edit, the same rule the audit log
-   itself follows (Phase 1) and marks keep after publishing (Phase 5).
+   itself follows and marks keep after publishing.
 5. **Cancel** (`POST /invoices/{id}/cancel/`) needs a reason and is refused
    once any payment exists — refund it first, so a cancelled invoice never
    leaves money unaccounted for.
@@ -92,8 +92,7 @@ as a `fine` or a plain `adjustment` (`POST /invoices/{id}/add-item/`).
 `POST /invoices/assess-late-fees/` adds a flat amount or a percentage as a
 `fine` line to every invoice overdue by more than `grace_days`, once each —
 an invoice that already has a fine is skipped, so running it again (the next
-morning, the next week) never fines the same invoice twice. Matches Phase
-4's stance: nothing here runs on a schedule the platform manages itself:
+morning, the next week) never fines the same invoice twice. Same as attendance: nothing here runs on a schedule the platform manages itself:
 someone (a cron job the school sets up, or the office by hand) decides when
 to run it.
 
@@ -139,12 +138,10 @@ GET    /api/v1/receipts/  refunds/                                    list/retri
 - **An online payment gateway.** Payments are recorded by hand for now
   (cash, bank, cheque, or an "online" method with a reference). A real
   gateway (eSewa, Khalti, a card processor) is an adapter away, the same
-  shape as Phase 4's biometric devices: the core doesn't need to know which
+  shape as attendance's biometric devices: the core doesn't need to know which
   one a school uses.
 - **A general ledger / accounting export.** Invoices and payments are the
   record; posting them into double-entry books is a later integration.
-- **Notifications** ("your fee is due", "payment received"). Needs the
-  Phase 8 notification service. `PaymentReceived` is the event to publish.
 - **Per-student ad-hoc fee overrides at generation time** (a one-off
   different tuition for one student, distinct from a scholarship). Today,
   a scholarship or an ad-hoc invoice item covers the same need.

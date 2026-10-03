@@ -1,8 +1,8 @@
-# Phase 14 — Alumni and Careers
+# Alumni and Careers
 
 What happens after school: the people who graduated, and the jobs, both
 the school's own hiring and openings elsewhere for students and alumni.
-Two modules, following the conventions in [`phase-1.md`](phase-1.md):
+Two modules, following the conventions in [`identity.md`](identity.md):
 `backend/modules/alumni/` and `backend/modules/careers/`. A shared
 file-upload foundation, `backend/core/files/`, arrives with them, because
 a job application needs a résumé.
@@ -29,9 +29,9 @@ JobPosting (outside openings; alumni post, the office approves) ──► studen
 |---|---|
 | Who keeps alumni records | **The graduate, self-service.** Their login stays, as `user_type` `alumni`. They keep their own profile, jobs, studies and achievements, and can offer to mentor. The office sees and corrects everything, and adds alumni from before the system. |
 | What careers covers | **Both.** The school's own hiring (vacancy → application → screening → interview → offer → hired, which creates the staff member and their HR contract), and a job board of outside openings for students and alumni. |
-| Donations | **Their own ledger.** Campaigns, and gifts recorded by the office with a receipt number. Refunds are new rows and nothing is edited, as with Phase 6 payments. Kept apart from student fee invoices, and no payment gateway, as in Phase 6. |
+| Donations | **Their own ledger.** Campaigns, and gifts recorded by the office with a receipt number. Refunds are new rows and nothing is edited, as with finance payments. Kept apart from student fee invoices, and no payment gateway, as in finance. |
 | Résumés | **The shared upload foundation, built now**: size and type checks, private storage, access checks. Résumés are its first user, and a structured résumé is kept alongside the file. |
-| Job applications | **Through Phase 13's engine** (decided in Phase 13). A vacancy's job form supplies the approval chain. |
+| Job applications | **Through the applications engine.** A vacancy's job form supplies the approval chain. |
 
 ## Files (`core/files`)
 
@@ -83,7 +83,7 @@ JobPosting (outside openings; alumni post, the office approves) ──► studen
   published → cancelled. Alumni see `events/upcoming/` and answer with
   `rsvp` (going / maybe / not going, guests). Capacity counts guests.
   The event row is locked, so the last place goes once. Cancelling tells
-  everyone who hadn't declined. Its own small model, because Phase 7 events
+  everyone who hadn't declined. Its own small model, because events
   are about enrolled students' attendance and points.
 - **Mentoring.** A graduate offers to mentor (`is_mentor`, topics,
   capacity). `profiles/mentors/` lists them for students and alumni, with
@@ -227,7 +227,7 @@ mentors and mentees need no permission for their own part.
 
 - **Internal promotions through careers.** Staff are refused at apply;
   changing someone's post is an HR contract change.
-- **Online giving.** No payment gateway yet, as in Phase 6. Gifts are
+- **Online giving.** No payment gateway yet, as in finance. Gifts are
   recorded by the office.
 - **Interview calendars and invitations** (.ics, video links made for
   you). The location field holds a room or a link.

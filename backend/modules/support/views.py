@@ -30,7 +30,7 @@ TAG = "support"
 class SupportTicketViewSet(OrganizationScopedViewSet):
     # No PUT/PATCH/DELETE: the workflow only ever moves through the actions below —
     # a bare PATCH would let a raiser edit status/assignment directly, bypassing them
-    # (the same superuser-bypasses-HasPermission gap fixed in Phases 5-7's admit-card/
+    # (the same superuser-bypasses-HasPermission gap fixed in the admit-card/
     # invoice/event-registration viewsets).
     http_method_names = ["get", "post", "head", "options"]
     queryset = SupportTicket.objects.select_related("campus", "raised_by", "assigned_to")

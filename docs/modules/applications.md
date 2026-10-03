@@ -1,10 +1,10 @@
-# Phase 13 — Applications
+# Applications
 
 One workflow engine for every request a school handles on paper today:
 admission forms, staff leave, scholarships, hostel beds, bus seats, event
 places, certificates, and anything else. It lives in
 `backend/modules/applications/` and follows the conventions in
-[`phase-1.md`](phase-1.md). It owns the workflow only. On the final
+[`identity.md`](identity.md). It owns the workflow only. On the final
 approval each kind calls the owning module's service, so a hostel bed is
 still reserved by hostel's rules and a leave is still approved by HR's.
 
@@ -27,7 +27,7 @@ Certificate (student, number, title, frozen contents; revoked, never deleted)
 | Kinds | admission, staff leave, scholarship, hostel, transport, event, certificate (a numbered `Certificate` record), general. |
 | Approval chain | **Configurable ordered steps per type.** A step names a permission; anyone holding it for the applicant's campus decides it. Approve, reject (reason required), or send back to the applicant, who fixes and resubmits. The step resumes where it was. Full history. |
 | Public forms | **Admission only**, no login, throttled per address. The applicant gets a reference number and a secret token to check, fix or withdraw it. CAPTCHA and email verification belong to the SaaS signup work. |
-| Job applications | **Deferred to Phase 14** (careers), plugging into this engine. |
+| Job applications | **Added by the careers module**, plugging into this engine. |
 
 ## How a type is set up
 
@@ -70,7 +70,7 @@ Certificate (student, number, title, frozen contents; revoked, never deleted)
 - `GET applications/me/` lists what I sent or what is about me or my
   children. `resubmit` (after a send-back) and `withdraw` (while open) are
   for the applicant. The office may also withdraw.
-- Notifications go through Phase 8's `notify()`: the step's deciders when
+- Notifications go through `notifications.services.notify()`: the step's deciders when
   an application reaches them, the applicant (and the student or staff
   member it is about) on approval, rejection or send-back. **A public
   applicant has no account**, so they are emailed or texted at the contact
@@ -84,7 +84,7 @@ Certificate (student, number, title, frozen contents; revoked, never deleted)
 | Kind | Calls | Outcome |
 |---|---|---|
 | admission | `admissions.create_admission` + `approve_admission` | An approved `Admission` with the application's number, ready to enroll from Admissions |
-| leave | `hr.apply_leave` + `approve_leave` | An approved `LeaveRequest`; balances and `StaffAttendanceDay` update as in Phase 11 |
+| leave | `hr.apply_leave` + `approve_leave` | An approved `LeaveRequest`; balances and `StaffAttendanceDay` update as in HR |
 | scholarship | `finance.grant_scholarship` | A `StudentScholarship` from today (`409 already_granted` if held) |
 | hostel | `hostel.allocate_hostel_room` | A reserved `Allocation` on the bed the final approver chose |
 | transport | `transport.assign_rider` | An `Assignment` on the route and stop applied for |
@@ -176,7 +176,6 @@ names, so each office decides its own steps. Applicants need nothing.
   SaaS public signup work; the throttle is the guard until then.
 - **File attachments** (a transcript scan, a medical note). Uploads don't
   exist anywhere yet. They come with the first module that stores files.
-- **Job applications.** Phase 14 (careers) adds that kind to this engine.
 - **Parallel steps** ("principal *and* accountant, in any order"). Steps
   are a sequence; put them one after the other.
 - **Deadlines and reminders** for a step left waiting. There are no

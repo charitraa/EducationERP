@@ -1,4 +1,4 @@
-"""Two permissions, the way Phase 10 splits viewing from running things:
+"""Two permissions, the way the inventory module splits viewing from running things:
 
 ``hostel.view``    see buildings, rooms, beds, allocations and complaints
 ``hostel.manage``  the warden's office: the building register, allocating

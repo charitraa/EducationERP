@@ -1,9 +1,9 @@
-# Phase 3 — Real-life checks
+# Academics: real-life checks
 
 Real situations in schools, +2 colleges and universities, what the system
 does in each one, and the test that proves it. Everything marked ✅ is
-built and tested, including the attendance situations Phase 3 prepared for
-and Phase 4 built.
+built and tested, including the attendance situations academics prepared for
+and attendance built.
 
 The rule behind most of this: **don't depend on current state alone.**
 Enrollments, elective choices, lessons, bell times and teaching assignments
@@ -76,12 +76,12 @@ Test files are under `backend/modules/`.
 
 ---
 
-## ✅ Phase 4 (attendance): built
+## ✅ Attendance: built
 
-Phase 3 recorded what attendance would need. Phase 4 built every item. Details:
-[`phase-4.md`](phase-4.md). Tests are in `backend/modules/attendance/tests/`.
+Academics recorded what attendance would need, and attendance built every item. Details:
+[`attendance.md`](attendance.md). Tests are in `backend/modules/attendance/tests/`.
 
-| Situation | What Phase 4 does | Test |
+| Situation | What attendance does | Test |
 |---|---|---|
 | ✅ History stays with the enrollment that existed when attendance was taken. | Each record stores its `enrollment`. After a move, the record still names the old class. | `test_marking.py` (HistoryTests) |
 | ✅ A teacher leaves; B replaces A. | `marked_by` is who actually marked, and the session keeps the day's teacher. Neither is recomputed. | same |

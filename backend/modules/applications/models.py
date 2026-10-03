@@ -1,6 +1,6 @@
 """Applications: one workflow engine for every kind of request a school
 handles — admission, staff leave, scholarship, hostel, transport, event,
-certificate, a job (Phase 14 careers), and anything else ("general").
+certificate, a job (from the careers module), and anything else ("general").
 
 An organization configures **ApplicationTypes**: a kind, optional extra
 questions, and ordered **approval steps**, each naming a permission. An

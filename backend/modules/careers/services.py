@@ -1,7 +1,7 @@
 """Careers writes: vacancies, applying, screening, interviews, offers,
 hiring, and the job board.
 
-Applying opens a Phase 13 application (kind ``job``) through the
+Applying opens an application (kind ``job``) through the
 applications service, so the approval chain, the history, sending back
 and withdrawing all work as for any other application. Hiring is that
 application's final approval: ``hire`` runs inside it, so a refusal (no

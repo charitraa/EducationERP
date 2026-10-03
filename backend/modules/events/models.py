@@ -8,9 +8,9 @@ club, …) and optionally one campus (empty: every campus). Registration is
 capacity closes registration once it's full — counting confirmed
 registrations only, never a waitlist.
 
-**EventAttendance** is its own lightweight check-in — students.md deliberately
-never reaches into Phase 4's attendance tables (see claude.md's "Avoid random
-cross-module database modifications"). **EventParticipation** is the richer
+**EventAttendance** is its own lightweight check-in. This module deliberately
+never writes to the attendance module's tables: modules don't modify each
+other's data. **EventParticipation** is the richer
 record: the role a student played and, for a competition, where they placed.
 
 Both can earn **points**, through a **PointRule** the office configures
@@ -158,7 +158,7 @@ class AttendanceStatus(models.TextChoices):
 
 class EventAttendance(TimeStampedModel):
     """A simple check-in: did this student show up? Its own record, never
-    Phase 4's ``AttendanceSession``/``AttendanceRecord``."""
+    the attendance module's ``AttendanceSession``/``AttendanceRecord``."""
 
     organization = models.ForeignKey("organizations.Organization", on_delete=models.CASCADE, related_name="+")
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="attendance")

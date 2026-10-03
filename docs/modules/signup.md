@@ -1,4 +1,4 @@
-# SaaS step 2: public signup, email verification, CAPTCHA, password reset
+# Public signup, email verification, CAPTCHA, password reset
 
 Step 2 of running the platform as a free, self-signup service (see the
 README roadmap). Anyone can create their own organization from a public
@@ -87,7 +87,7 @@ hCaptcha and reCAPTCHA share the same "siteverify" protocol, so one
 function covers all three. It **fails closed**: if the provider can't be
 reached, the check fails. Otherwise an outage would switch the protection
 off. It's checked on `POST /signup/`, `POST /signup/resend/` and the
-Phase 13 **public application form** (`captcha_token` in the body), which
+the **public application form** (`captcha_token` in the body), which
 had been waiting for this step. The frontend reads
 `GET /signup/config/` to know which widget to show, and with which site
 key.
@@ -169,7 +169,7 @@ Error codes: `signup_disabled`, `captcha_failed`, `invalid_token`,
   main campus and org-admin in one place. `bootstrap_organization` now
   calls it.
 - `integrations/email`: the `django` delivery option.
-- Phase 13's public application form takes `captcha_token`.
+- The public application form takes `captcha_token`.
 - OpenAPI: `TypeEnum` (organization type) and `SignupRequestStatusEnum`
   are pinned in `ENUM_NAME_OVERRIDES`.
 - The tenant sweep gives each organization the signup it was created

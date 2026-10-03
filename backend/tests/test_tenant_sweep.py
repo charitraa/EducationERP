@@ -335,7 +335,7 @@ def build_tenant(tag):
     staff_day = StaffAttendanceDay.objects.create(organization=org, staff=staff,
                                                   date=date.today(), status="present")
 
-    # Phase 5 — examinations
+    # examinations
     scale = GradeScale.objects.create(organization=org, name=f"{tag} Scale")
     bands, divisions = exam_services.preset_bands("neb-style")
     exam_services.replace_bands(scale, bands, divisions)
@@ -369,7 +369,7 @@ def build_tenant(tag):
                                      name=f"{tag} Term Plan", grade_scale=scale)
     ResultPlanExam.objects.create(plan=plan, exam=exam, weight=100)
 
-    # Phase 6 — finance
+    # finance
     fee_category = FeeCategory.objects.create(organization=org, code=f"{tag}-fee", name=f"{tag} Tuition")
     fee_structure = FeeStructure.objects.create(organization=org, program=program, level=11, academic_year=year,
                                                 name=f"{tag} Structure")
@@ -393,7 +393,7 @@ def build_tenant(tag):
     refund = Refund.objects.create(organization=org, payment=payment, amount=100, reason=f"{tag} refund",
                                    refunded_at=timezone.now())
 
-    # Phase 7 — events
+    # events
     event_category = EventCategory.objects.create(organization=org, code=f"{tag}-cat", name=f"{tag} Category")
     my_event = Event.objects.create(organization=org, campus=campus, category=event_category, name=f"{tag} Event",
                                     start_at=timezone.now() + timedelta(days=7),
@@ -416,7 +416,7 @@ def build_tenant(tag):
     student_award = StudentAward.objects.create(organization=org, student=student, award=award,
                                                 awarded_at=timezone.now())
 
-    # Phase 8 — communication
+    # communication
     notification = Notification.objects.create(organization=org, recipient=user, event_type="test.event",
                                                title=f"{tag} notice")
     notice = Notice.objects.create(organization=org, campus=campus, audience="all", title=f"{tag} Notice",
@@ -436,7 +436,7 @@ def build_tenant(tag):
     ticket_comment = TicketComment.objects.create(organization=org, ticket=support_ticket, author=user,
                                                   body=f"{tag} comment")
 
-    # Phase 9 — library
+    # library
     author = Author.objects.create(organization=org, name=f"{tag} Author")
     category = Category.objects.create(organization=org, code=f"{tag}-cat", name=f"{tag} Category")
     publisher = Publisher.objects.create(organization=org, name=f"{tag} Publisher")
@@ -455,7 +455,7 @@ def build_tenant(tag):
     fine = Fine.objects.create(organization=org, member=member, issue=issue, category="overdue", amount="10.00")
     reservation = Reservation.objects.create(organization=org, book=book, member=member)
 
-    # Phase 10 — inventory
+    # inventory
     item_category = ItemCategory.objects.create(organization=org, code=f"{tag}-icat", name=f"{tag} Item Category")
     supplier = Supplier.objects.create(organization=org, name=f"{tag} Supplier")
     stock_item = Item.objects.create(organization=org, category=item_category, code=f"{tag}-item",
@@ -487,7 +487,7 @@ def build_tenant(tag):
     disposal = Disposal.objects.create(organization=org, asset=old_asset, method="scrapped",
                                        disposed_on=timezone.localdate(), reason=f"{tag} disposal")
 
-    # Phase 11 — HR and payroll
+    # HR and payroll
     position = Position.objects.create(organization=org, code=f"{tag}-lect", name=f"{tag} Lecturer")
     contract = Contract.objects.create(organization=org, staff=staff, kind="permanent", position=position,
                                        department=department, start_date=date(2020, 1, 1),
@@ -530,7 +530,7 @@ def build_tenant(tag):
     payroll_adjustment = PayrollAdjustment.objects.create(organization=org, staff=staff, kind="earning",
                                                           amount=100, description=f"{tag} bonus")
 
-    # Phase 12 — hostel and transport
+    # hostel and transport
     building = Building.objects.create(organization=org, campus=campus, code=f"{tag}-hall", name=f"{tag} Hall",
                                        warden=staff)
     floor = Floor.objects.create(organization=org, building=building, number=0, name=f"{tag} Ground")
@@ -562,7 +562,7 @@ def build_tenant(tag):
     fuel_log = FuelLog.objects.create(organization=org, vehicle=vehicle, date=date.today(), litres=10, cost=1000,
                                       note=f"{tag} fuel")
 
-    # Phase 13 — applications
+    # applications
     application_type = ApplicationType.objects.create(organization=org, code=f"{tag}-hostel",
                                                       name=f"{tag} Hostel form", kind="hostel")
     ApprovalStep.objects.create(organization=org, application_type=application_type, sequence=1,
@@ -576,7 +576,7 @@ def build_tenant(tag):
                                              number=f"{tag}-CERT-1", issued_on=date.today(),
                                              contents={"student_name": tag})
 
-    # Phase 14 — alumni and careers (and the shared file store)
+    # alumni and careers (and the shared file store)
     alumni_profile = AlumniProfile.objects.create(organization=org, campus=campus, first_name=f"{tag} Alumna",
                                                   last_name="Graduate", program=program, academic_year="2080/81",
                                                   is_mentor=True, directory_visible=True)
@@ -919,7 +919,7 @@ ACTION_ATTACKS.update({
         lambda a, b: (None, {"book": b["library_book"].pk, "member": a["library_member"].pk}),
         lambda a, b: (None, {"book": a["library_book"].pk, "member": b["library_member"].pk}),
     ],
-    # Phase 10: every inventory write goes through a plain input serializer, so each
+    # Inventory: every inventory write goes through a plain input serializer, so each
     # foreign id is attacked by hand, nested line ids included.
     ("StockLevelViewSet", "adjust"): [
         lambda a, b: (None, {"item": b["inventory_item"].pk, "store": a["inventory_store"].pk, "delta": 1,
@@ -977,7 +977,7 @@ ACTION_ATTACKS.update({
 })
 
 ACTION_ATTACKS.update({
-    # Phase 11: leave requests, balances and runs go through plain input serializers.
+    # HR and payroll: leave requests, balances and runs go through plain input serializers.
     ("LeaveRequestViewSet", "create"): [
         lambda a, b: (None, {"staff": b["staff"].pk, "leave_type": a["hr_leave_type"].pk,
                              "start_date": _future(), "end_date": _future()}),
@@ -999,7 +999,7 @@ ACTION_ATTACKS.update({
 })
 
 ACTION_ATTACKS.update({
-    # Phase 12: allocations, complaints, rider assignments and trips go through plain input serializers.
+    # Hostel and transport: allocations, complaints, rider assignments and trips go through plain input serializers.
     ("AllocationViewSet", "create"): [
         lambda a, b: (None, {"bed": b["hostel_bed2"].pk, "student": a["student"].pk}),
         lambda a, b: (None, {"bed": a["hostel_bed2"].pk, "student": b["student"].pk}),
@@ -1043,7 +1043,7 @@ ACTION_ATTACKS.update({
 })
 
 ACTION_ATTACKS.update({
-    # Phase 13: the submission and decision serializers are plain input; ids inside ``data`` and
+    # Applications: the submission and decision serializers are plain input; ids inside ``data`` and
     # ``decision`` are checked by each kind (applications/kinds.py).
     ("ApplicationViewSet", "create"): [
         lambda a, b: (None, {"application_type": b["application_type"].pk, "student": a["student"].pk,
@@ -1075,7 +1075,7 @@ ACTION_ATTACKS.update({
 })
 
 ACTION_ATTACKS.update({
-    # Phase 14: plain input serializers with record ids.
+    # Alumni and careers: plain input serializers with record ids.
     ("AlumniProfileViewSet", "graduate"): [
         lambda a, b: (None, {"section": b["section"].pk}),
         lambda a, b: (None, {"students": [b["student"].pk]}),
@@ -1205,7 +1205,7 @@ NO_RECORD_INPUT = {
     # Platform admins only: refused (403) before any lookup.
     ("SignupRequestViewSet", "approve"),
     ("SignupRequestViewSet", "reject"),
-    # Phase 14
+    # Alumni and careers
     ("AlumniProfileViewSet", "me"),
     ("AlumniEventViewSet", "publish"),
     ("AlumniEventViewSet", "cancel"),

@@ -1,4 +1,4 @@
-# SaaS step 1 — API keys
+# API keys
 
 Programs use the API with a key instead of a person's login: a school's
 website posting admission forms, an SMS gateway, a reporting tool, a

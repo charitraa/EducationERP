@@ -1,4 +1,4 @@
-"""Three permissions, split by job the way Phase 9 splits ``library.manage``
+"""Three permissions, split by job the way the library module splits ``library.manage``
 from ``library.circulate``:
 
 ``inventory.view``    see items, stock levels, movements, assets and orders

@@ -1,8 +1,8 @@
-# Phase 5 — Examinations
+# Examinations
 
 Exams, marks, grades, results, report cards and transcripts, for a school's
 unit tests and terminals as much as a college's semester exams. Everything
-follows the conventions in [`phase-1.md`](phase-1.md).
+follows the conventions in [`identity.md`](identity.md).
 
 ```
 GradeScale (bands + divisions) ──────────────┐
@@ -29,7 +29,7 @@ renders report cards, transcripts and summaries as data.
 
 ---
 
-## Grading: one flexible scale, like Phase 3a's programs
+## Grading: one flexible scale, like programs in academics
 
 A **GradeScale** belongs to one program, or to none (the organization's
 default, used by every program without a scale of its own). It holds:
@@ -60,7 +60,7 @@ scale for the next exam instead.
 3. Give every paper a **date and time**. Checked against the calendar
    (`on_holiday`) and against the exam's other papers: two papers at the same
    level and slot clash unless they're electives nobody takes together
-   (`paper_clash`, using the same sharing check as the timetable, Phase 3b).
+   (`paper_clash`, using the same sharing check as the timetable).
 4. **Schedule** it (`POST /exams/{id}/schedule/`): every paper needs a date,
    time and components, and none may clash. This sets the exam's span and
    writes one `CalendarEvent` (kind `exam`, `suspends_classes=True`) so the
@@ -84,13 +84,13 @@ scale for the next exam instead.
 ## Marks: teacher enters, office verifies, then publish
 
 A **MarkSheet** is one paper's marks for one class — the same shape as
-attendance's session (Phase 4): idempotent to open, `open → submitted →
+attendance's session: idempotent to open, `open → submitted →
 verified`, and reopened only by the office.
 
 - **Who may**: the paper's subject teacher for that class (`TeachingAssignment`
   says who), or anyone holding `exams.manage`. Checked on every action.
 - **Who's expected**: everyone in the class on the paper's date who takes the
-  subject — for an elective, only those who chose it (Phase 3a's
+  subject — for an elective, only those who chose it (academics'
   `students_taking`), so a student's own choices and moves are what decide,
   the same rule attendance uses.
 - **Enter marks**: `POST /mark-sheets/{id}/marks/` takes several students and
@@ -210,8 +210,6 @@ GET    /api/v1/term-results/                                          CRUD; POST
   transcript lists both lines.
 - **Grievances / re-checking requests.** A correction covers "the office
   changed a mark"; a student-initiated request-and-approval flow would sit
-  with communication (Phase 8).
-- **Notifications** ("your results are out"). Needs the Phase 8 notification
-  service. `ExamResultPublished` is the event to publish.
+  with communication.
 - **Seat plan PDF / hall tickets as printable layouts** — the data
   (`seat-allocations`, `admit-cards/{id}/data/`) is there; the layout isn't.

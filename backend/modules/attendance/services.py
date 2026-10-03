@@ -288,7 +288,7 @@ def submit(*, session, rest: str | None = None, by=None) -> AttendanceSession:
 
 
 def _notify_absentees(session: AttendanceSession) -> None:
-    """``AttendanceMarked`` (claude.md section 26): tell a guardian when
+    """``AttendanceMarked``: tell a guardian when
     their child is marked absent — the case they actually need to hear
     about, not every present mark."""
     from modules.notifications.services import notify

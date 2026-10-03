@@ -6,7 +6,7 @@ both fill the last seat.
 
 A trip's roll is taken by the route's own crew (its driver or assistant) or
 by anyone holding ``transport.manage`` for the campus — the way a teacher
-marks their own class in Phase 4 without needing an office permission.
+marks their own class in the attendance module without needing an office permission.
 """
 from datetime import date as Date
 

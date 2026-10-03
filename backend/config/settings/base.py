@@ -49,7 +49,7 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
 ]
 
-# Phase 1 — identity foundation. Every later module depends on these.
+# The platform: identity, permissions, audit. Every module depends on these.
 CORE_APPS = [
     "core.common",
     "core.organizations",
@@ -292,9 +292,9 @@ SIMPLE_JWT = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "Education ERP API",
     "DESCRIPTION": (
-        "Modular education ERP platform. Phase 1: organizations, campuses, "
-        "users, roles, permissions, authentication and audit logs. Phase 2: "
-        "students, enrollments, parents, staff and admissions."
+        "An education ERP for schools, colleges and universities: students, "
+        "academics, timetable, attendance, exams, fees, HR and payroll, library, "
+        "inventory, hostel, transport, applications, alumni and careers."
     ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -348,7 +348,7 @@ SPECTACULAR_SETTINGS = {
         "PayslipLineKindEnum": "modules.payroll.models.LineKind",
         "PayslipLineSourceEnum": "modules.payroll.models.LineSource",
         "PayrollRunStatusEnum": "modules.payroll.models.RunStatus",
-        # Phase 12 added other "gender" and "direction" fields; keep these names stable.
+        # The hostel and transport modules added other "gender" and "direction" fields; keep these names stable.
         "GenderEnum": "core.common.choices.Gender",
         "DirectionEnum": "modules.attendance.models.Punch.Direction",
         "InvoiceSourceEnum": "modules.finance.models.InvoiceSource",

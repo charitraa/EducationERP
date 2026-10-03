@@ -1,7 +1,7 @@
 """Careers: the school's own hiring, and a job board for students and alumni.
 
 **Own hiring.** A **Vacancy** is an opening at a campus. Applying to it
-opens a Phase 13 ``Application`` of kind ``job``: the vacancy's
+opens an ``applications.Application`` of kind ``job``: the vacancy's
 application type supplies the approval chain (screening, interview, hire)
 and the history. **Candidacy** ties the application to the vacancy and
 holds the résumé file and the screening score. **Interviews** are

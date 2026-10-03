@@ -1,12 +1,12 @@
-# Phase 3b — Timetable
+# Timetable
 
-When each class meets, who teaches it, and where. Built on the Phase 3a
-structure ([`phase-3.md`](phase-3.md)): the timetable schedules **teaching
-assignments** (section + subject + teacher). Attendance (Phase 4) is taken
+When each class meets, who teaches it, and where. Built on the academics module
+structure ([`academics.md`](academics.md)): the timetable schedules **teaching
+assignments** (section + subject + teacher). Attendance is taken
 against its entries.
 
 Module: `backend/modules/timetable/`. Follows the conventions in
-[`phase-1.md`](phase-1.md) and [`phase-2.md`](phase-2.md).
+[`identity.md`](identity.md) and [`students.md`](students.md).
 
 ---
 
@@ -55,7 +55,7 @@ share:
 |---|---|
 | Teacher | Always, **at any campus**. A person can't be in two places. |
 | Room | Always |
-| Section | Yes, unless **both** subjects are electives at that level and **no student of the section takes both** (see student electives in [`phase-3.md`](phase-3.md)). Electives run in parallel for different groups of students. |
+| Section | Yes, unless **both** subjects are electives at that level and **no student of the section takes both** (see student electives in [`academics.md`](academics.md)). Electives run in parallel for different groups of students. |
 
 Lessons of one combined class share their teacher and room by design, so
 they never clash with each other. A weekly lesson also clashes with an
@@ -254,7 +254,7 @@ lessons of one day with its changes applied:
 - Cancelled lessons are listed with `is_cancelled: true`, so the day can
   show them struck out.
 
-Attendance (Phase 4) builds on this view.
+Attendance builds on this view.
 
 ## My timetable
 
@@ -385,7 +385,7 @@ hall never has two teachers.
 
 130 tests for the timetable (513 in the suite). They cover every rule
 above, each kind of clash, and the real-life situations listed in
-[`phase-3-real-life.md`](phase-3-real-life.md).
+[`academics-real-life.md`](academics-real-life.md).
 
 ---
 
@@ -398,4 +398,4 @@ above, each kind of clash, and the real-life situations listed in
 - **Electives carried over on a same-level move aren't re-checked** against
   the new section's timetable.
 - **The generator** doesn't know teacher availability, labs or double
-  periods. See [`phase-3-real-life.md`](phase-3-real-life.md).
+  periods. See [`academics-real-life.md`](academics-real-life.md).

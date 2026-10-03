@@ -4,7 +4,7 @@ and the borrowing lifecycle — issue, return, reservation, fine.
 A **Book** is a catalog entry (title, authors, publisher) shared across the
 whole organization, the same way a **Copy** — one physical item, at one
 campus, on one shelf — is what actually gets borrowed. That split mirrors
-Phase 5's exam paper vs. mark sheet: one describes what it is, the other is
+the examinations module's exam paper vs. mark sheet: one describes what it is, the other is
 the thing in front of you.
 
 **Return** isn't its own model: it's ``Issue.status`` moving to ``returned``,

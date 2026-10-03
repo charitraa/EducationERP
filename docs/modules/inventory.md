@@ -1,8 +1,8 @@
-# Phase 10 — Inventory
+# Inventory
 
 Consumable stock kept per store, and fixed assets tracked one by one: what
 the school buys, where it is, who has it, and how it leaves. Everything
-follows the conventions in [`phase-1.md`](phase-1.md).
+follows the conventions in [`identity.md`](identity.md).
 
 ```
 ItemCategory ──► Item (consumable | asset)          Supplier
@@ -35,7 +35,7 @@ An **Item** is a catalog entry shared across the organization, and its
   unit is an `Asset` with its own tag, serial number, condition and
   history.
 
-This is the same split as Phase 9's Book and Copy. An item's `kind` is
+This is the same split as the library's Book and Copy. An item's `kind` is
 locked once it has stock, assets or purchase-order lines, since
 switching would strand them.
 
@@ -65,7 +65,7 @@ so two opposite transfers can't deadlock.
 
 **Low stock** is an alert, not a cron job. When any movement takes a store's quantity from above the item's `reorder_level` to at or
 below it, everyone with `inventory.stock` or `inventory.manage` at that
-campus is sent a notification through Phase 8's `notify()`
+campus is sent a notification through `notify()`
 (`inventory.low_stock`). It fires once, on the crossing, not on every
 later movement. `stock-levels/?low=1` lists what is currently low.
 
@@ -122,13 +122,13 @@ inventory permission.
 DELETE is a soft delete, which never reaches the database's `PROTECT`.
 So the views check first: an item, store, supplier or category that
 anything still refers to answers 409 `in_use`, and the answer is to
-deactivate it (`is_active=false`) instead, as in Phase 6. A store's
+deactivate it (`is_active=false`) instead, as in finance. A store's
 campus is locked once it holds stock, assets or orders, since those
 rows carry the campus too.
 
 ## Permissions
 
-Three codes, split by job the way Phase 9 splits `library.manage` from
+Three codes, split by job the way the library splits `library.manage` from
 `library.circulate`:
 
 | Code | Who | What |
@@ -164,10 +164,10 @@ GET    /api/v1/inventory/disposals/
 ## Not built (by choice, for now)
 
 - **Supplier bills and payments through Finance.** A purchase order
-  records prices, but paying the supplier isn't a Phase 6 transaction.
-  Phase 6 handles money coming in from students. Money going out to
+  records prices, but paying the supplier isn't a finance transaction.
+  Finance handles money coming in from students. Money going out to
   suppliers belongs with accounts payable, which fits beside payroll in
-  Phase 11 or a later accounting module.
+  payroll or a later accounting module.
 - **Stock valuation (FIFO / weighted average) and depreciation.**
   Receipts carry their unit cost and assets their purchase cost, so
   both can be computed later from data already stored.
@@ -175,5 +175,5 @@ GET    /api/v1/inventory/disposals/
   them). Today the storekeeper issues directly.
 - **Barcode/QR label printing and scanning.** Asset tags are plain
   generated strings; a scanner would be an `integrations/` adapter
-  later, as with Phase 9's accession numbers.
+  later, as with the library's accession numbers.
 - **Batch/expiry tracking** for consumables such as lab chemicals.

@@ -74,7 +74,7 @@ def approve_admission(*, admission: Admission, note: str = "", by=None) -> Admis
 
 
 def _notify_application_approved(admission: Admission) -> None:
-    """``ApplicationApproved`` (claude.md section 26). The applicant has no
+    """``ApplicationApproved``. The applicant has no
     login account yet at this stage, so this reaches them directly through
     the (currently log-only) email/SMS adapters rather than an in-app
     ``Notification`` — that model only ever addresses an existing ``User``."""

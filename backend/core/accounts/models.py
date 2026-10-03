@@ -11,8 +11,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel, SoftDeleteModel
     """The single identity for everyone on the platform.
 
     Students, parents, teachers and staff all authenticate through this model.
-    Their role-specific data lives in profile models added in later phases
-    (StudentProfile, StaffProfile, ...), each pointing back at one User — never
+    Their role-specific data lives in profile models
+    (Student, Parent, StaffMember, ...), each pointing back at one User — never
     a second login system.
     """
 
@@ -29,7 +29,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel, SoftDeleteModel
         TEACHER = "teacher", "Teacher"
         STAFF = "staff", "Staff"
         ADMINISTRATOR = "administrator", "Administrator"
-        # A graduate keeps their login (Phase 14); set on graduation.
+        # A graduate keeps their login; set on graduation.
         ALUMNI = "alumni", "Alumni"
         # An API key's own identity: can't log in, never listed with people.
         INTEGRATION = "integration", "Integration (API key)"

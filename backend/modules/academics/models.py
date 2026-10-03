@@ -298,7 +298,7 @@ class Section(OrganizationOwnedModel):
 
 
 class TeachingAssignment(TimeStampedModel):
-    """Who teaches which subject to which section. The timetable (Phase 3b)
+    """Who teaches which subject to which section. The timetable
     schedules these; attendance and marks hang off them later.
 
     One subject may have several teachers: theory by one, practicals by

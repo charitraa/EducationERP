@@ -1,6 +1,6 @@
 """HR: who works here, on what terms, and when they're away.
 
-HR extends Phase 2's ``StaffMember`` (the employee) rather than replacing it.
+HR extends the students module's ``StaffMember`` (the employee) rather than replacing it.
 Departments are ``academics.Department`` — an office like Accounts is a
 department with no programs — and holidays are the academic calendar's
 campus-wide closures, which attendance already reads.

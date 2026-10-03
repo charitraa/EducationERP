@@ -76,7 +76,7 @@ def permission_codes() -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — identity foundation
+# The platform: identity
 # ---------------------------------------------------------------------------
 def _crud(module: str, label: str, extra=()):
     actions = [
@@ -137,7 +137,7 @@ register_roles(
         RoleSpec(
             code="student",
             name="Student",
-            description="Baseline role for students; module access is added per phase.",
+            description="Baseline role for students: they reach their own records through the /me/ endpoints.",
             permissions=(),
         ),
         RoleSpec(

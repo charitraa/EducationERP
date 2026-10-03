@@ -1,8 +1,6 @@
 """The one in-app record of a business event reaching one user.
 
-Per claude.md's "Business Event -> Notification Service -> in-app / push /
-email / SMS" (section 26): another module never writes here directly — it
-calls ``notifications.services.notify()``, which creates this row and fans
+Another module never writes here directly. It calls ``notifications.services.notify()``, which creates this row and fans
 the same event out through the (currently log-only) email/SMS/push adapters
 under ``integrations/``. Written synchronously, no Celery, matching how
 ``Invoice.paid_amount``/``StaffAttendanceDay`` are kept in step elsewhere.

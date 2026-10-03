@@ -1,14 +1,14 @@
-# Phase 7 — Events and student points
+# Events and student points
 
 Events, registration, attendance and participation at them, and the points,
 achievements, badges and titles they can earn. Everything follows the
-conventions in [`phase-1.md`](phase-1.md).
+conventions in [`identity.md`](identity.md).
 
 ```
 EventCategory
   └─► Event (campus, or every campus)
         ├─► EventRegistration (open | approval, capacity)
-        ├─► EventAttendance   (its own check-in — never Phase 4's tables)
+        ├─► EventAttendance   (its own check-in, never attendance's tables)
         └─► EventParticipation (role, and a competition's placing)
                     │
            PointRule (configurable) ──► PointEntry ──► StudentPoints (running total)
@@ -27,10 +27,10 @@ summaries and the leaderboard as data.
 
 ## Events never touch Attendance's tables
 
-claude.md is explicit that cross-module writes like "Events directly
-modifying Attendance tables" are the wrong pattern. `EventAttendance` is its
+Modules never write to each other's tables, so events don't touch
+attendance's. `EventAttendance` is its
 own simple present/absent check-in — a different model, a different table,
-nothing in common with Phase 4's `AttendanceSession`/`AttendanceRecord`
+nothing in common with attendance's `AttendanceSession`/`AttendanceRecord`
 beyond the idea of "who showed up." A student's academic attendance and
 their sports-day attendance are unrelated facts, and the code keeps them
 that way.
@@ -39,7 +39,7 @@ that way.
 
 An **Event** belongs to an **EventCategory** (sports, cultural, academic
 club, …) and, optionally, one campus — empty means every campus, shared the
-same way Phase 3a's calendar events are: a campus-scoped role sees and can
+same way academics' calendar events are: a campus-scoped role sees and can
 register for a shared event, but only an organization-wide role can create
 one (`EventViewSet._check_scope`, the same rule `CalendarEventViewSet`
 already applies).
@@ -72,8 +72,7 @@ Publishing, cancelling and the fee-structure-style setup (categories, point
 rules, award rules) are the office's job (`events.manage`). Day-to-day
 running one — entering and deciding registrations, taking attendance,
 recording participation — belongs to whoever is named as the event's `organized_by`,
-the same shape as a subject teacher marking their own class's exam (Phase
-5): checked against the event, not just a permission code
+the same shape as a subject teacher marking their own class's exam: checked against the event, not just a permission code
 (`services.ensure_can_run`). The office can still step in on any event.
 
 ## Attendance and participation are different questions
@@ -146,9 +145,7 @@ POST   /api/v1/student-awards/{id}/end/
   is queued for a freed slot.
 - **A public event calendar / feed.** `events/me/` is per-student; a
   campus-wide "what's on" view for anyone to browse is a communication
-  concern (Phase 8).
-- **Notifications** ("your registration was approved", "you earned a
-  badge"). Needs the Phase 8 notification service.
+  concern.
 - **Points/awards fed by other modules** (an attendance streak, a library
   return, a payment made on time). The ledger and rule engine don't assume
   events are the only source, but nothing outside this module posts to them

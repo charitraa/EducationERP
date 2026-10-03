@@ -1,13 +1,13 @@
-# Phase 11 — HR and Payroll
+# HR and Payroll
 
 Who works here and on what terms, when they're away, and what they're paid
 each month. Two modules, following the conventions in
-[`phase-1.md`](phase-1.md): `backend/modules/hr/` and
-`backend/modules/payroll/`. Student fees (Phase 6) and staff pay never touch
+[`identity.md`](identity.md): `backend/modules/hr/` and
+`backend/modules/payroll/`. Student fees and staff pay never touch
 each other.
 
 ```
-                StaffMember (Phase 2) ◄── EmployeeProfile (PAN, bank, tax status, fund numbers)
+                StaffMember ◄── EmployeeProfile (PAN, bank, tax status, fund numbers)
                     │   ▲
     Position ──► Contract ◄── academics.Department
                     │
@@ -24,18 +24,18 @@ PayrollRun (campus, period) ──► Payslip ──► PayslipLine
                     PayrollAdjustment (one-off; corrects an approved payslip)
 ```
 
-HR **extends** Phase 2's `StaffMember`, which stays the employee record.
-Two things in claude.md's HR list were already built and are reused rather
+HR **extends** `staff.StaffMember`, which stays the employee record.
+Two things HR needs were already built and are reused rather
 than copied:
 
 - **Department** is `academics.Department`. An office such as Accounts is a
-  department with no programs. Inventory (Phase 10) already issues stock to
+  department with no programs. Inventory already issues stock to
   these departments.
 - **Holiday** is the academic calendar's campus-wide closures
   (`CalendarEvent` with `suspends_classes`, no program). Attendance already
   reads them. Leave and payroll don't count those days either.
 
-**Attendance** is Phase 4's `StaffAttendanceDay`. HR writes to it only
+**Attendance** is `attendance.StaffAttendanceDay`. HR writes to it only
 through `attendance.services.set_staff_day`, and payroll only reads it
 through `attendance.selectors`.
 
@@ -372,10 +372,10 @@ GET    /api/v1/payroll/adjustments/                                    POST adds
 - **Payslip PDF**, like report cards: clients render the structured JSON.
 - **Document file uploads** wait for `core/files/`. `file_url` links to the
   scan meanwhile.
-- **Accounts payable** (paying suppliers, from Phase 10's purchase orders)
+- **Accounts payable** (paying suppliers, from inventory purchase orders)
   isn't payroll. It belongs with a later accounting module.
 - **Leave encashment** at year end or on leaving, and **compensatory
   leave** for working a holiday. Both can be done with a balance adjustment
   and a payroll adjustment for now.
-- **Substitutes when a teacher's leave is approved.** Phase 3's lesson
+- **Substitutes when a teacher's leave is approved.** The timetable's lesson
   changes handle cover. Approval doesn't create them automatically.

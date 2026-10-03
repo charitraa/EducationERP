@@ -1,7 +1,7 @@
 """``library.manage`` runs the catalog and memberships (books, authors,
 categories, publishers, shelves, copies, members). ``library.circulate`` is
 the front-desk job: issue, return, fines, reservations. Split the same way
-Phase 5 splits ``exams.manage`` from ``exams.mark`` — an institution that
+the examinations module splits ``exams.manage`` from ``exams.mark`` — an institution that
 wants a librarian who circulates books but doesn't touch the catalog can
 grant just the one permission through a custom role.
 

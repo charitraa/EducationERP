@@ -278,7 +278,7 @@ def publish_plan(plan: ResultPlan, *, by) -> dict:
 
 
 def _notify_results_published(results, label: str, organization_id) -> None:
-    """``ExamResultPublished`` (claude.md section 26): tell each student and
+    """``ExamResultPublished``: tell each student and
     their guardians through the central Notification Service."""
     from modules.notifications.services import notify
     from modules.parents.selectors import links_for_student

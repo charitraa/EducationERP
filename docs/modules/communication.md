@@ -1,8 +1,8 @@
-# Phase 8 — Communication
+# Communication
 
 Notices, in-app/email/SMS/push notifications, direct messaging and
 appointment booking, and support tickets. Everything follows the
-conventions in [`phase-1.md`](phase-1.md).
+conventions in [`identity.md`](identity.md).
 
 ```
 Business event (any module) ──► notifications.services.notify() ──► Notification (in-app, per user)
@@ -27,7 +27,7 @@ Code: `backend/modules/notifications/`, `backend/modules/notices/`,
 
 ## The Notification Service is the one door in
 
-claude.md's business-event pipeline (section 26) is `Business Event ->
+The business-event pipeline is `Business Event ->
 Notification Service -> in-app / push / email / SMS`. In practice that means
 every other module calls `notifications.services.notify(recipients,
 event_type=..., title=..., body=..., data=..., organization_id=...)` the
@@ -36,7 +36,7 @@ moment something worth telling someone about happens — it never writes a
 caller's transaction, the same way `Invoice.paid_amount` and
 `StaffAttendanceDay` are kept in step elsewhere — no Celery, no queue.
 
-Wired in this phase: `finance.record_payment` (`finance.payment_received`),
+Wired in: `finance.record_payment` (`finance.payment_received`),
 `examinations.publish_exam`/`publish_plan` (`examinations.result_published`),
 `events.register`/`decide_registration`
 (`events.registration_confirmed`), and `attendance.submit`
@@ -100,7 +100,7 @@ whoever raised it, for closing) can assign, resolve or close one.
 `SupportTicketViewSet` has no PUT/PATCH/DELETE — the workflow only ever
 moves through `assign`/`resolve`/`close`, so a bare PATCH can't let a raiser
 edit status or assignment directly (the same superuser-bypasses-`HasPermission`
-gap Phases 5–7's admit-card/invoice/event-registration viewsets guarded
+gap the admit-card, invoice and event-registration viewsets guard
 against, closed here with `http_method_names` instead of a `create()`
 override).
 

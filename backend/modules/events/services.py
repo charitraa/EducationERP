@@ -162,7 +162,7 @@ def decide_registration(registration: EventRegistration, approve: bool, *, note:
 
 
 def _notify_registration_confirmed(registration: EventRegistration) -> None:
-    """``EventRegistered`` (claude.md section 26): tell the student and
+    """``EventRegistered``: tell the student and
     their guardians their registration was confirmed."""
     from modules.notifications.services import notify
     from modules.parents.selectors import links_for_student

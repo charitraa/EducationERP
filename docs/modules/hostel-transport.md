@@ -1,9 +1,9 @@
-# Phase 12 — Hostel and Transport
+# Hostel and Transport
 
 Who sleeps where, who rides which bus, and what each costs per term. Two
-modules, following the conventions in [`phase-1.md`](phase-1.md):
+modules, following the conventions in [`identity.md`](identity.md):
 `backend/modules/hostel/` and `backend/modules/transport/`. Both bill
-through finance (Phase 6) and never write its tables.
+through finance and never write its tables.
 
 ```
 Building (campus, gender) ──► Floor ──► HostelRoom ──► Bed
@@ -30,8 +30,8 @@ finance.Invoice.source = fees | hostel | transport
 |---|---|
 | Fees | Their **own invoice per term** (`Invoice.source` = `hostel` / `transport`), billed by an idempotent "generate invoices" action through finance's service. Tuition invoices are untouched. |
 | Who | **Students and staff** can hold a bed or ride. Only students are billed; staff charges, if any, go through payroll adjustments. |
-| Bus roll | **Per trip, per student**: a trip is a route on a date in one direction. The crew marks each rider boarded or absent; parents are told about an absence. Separate from Phase 4's class attendance tables. |
-| Complaints, maintenance | **Own small models**, not Phase 8 support tickets or Phase 10 assets. They need rooms, odometers, fuel and paper expiries, which those don't have. |
+| Bus roll | **Per trip, per student**: a trip is a route on a date in one direction. The crew marks each rider boarded or absent; parents are told about an absence. Separate from class attendance. |
+| Complaints, maintenance | **Own small models**, not support tickets or inventory assets. They need rooms, odometers, fuel and paper expiries, which those don't have. |
 
 ## Hostel
 
@@ -121,7 +121,7 @@ the term:
   and only bills campuses where the caller holds both.
 
 Payments, receipts, refunds, installments and late fees then work as for
-any invoice (Phase 6).
+any invoice.
 
 ## Permissions
 
@@ -209,6 +209,6 @@ reveal who holds a bed.
   span billed at the time; settle with a finance credit line or refund.
 - **Automatic reminders for expiring papers and licences.** The
   `expiring_within` filters exist; a scheduled job would call them (no cron
-  in the stack yet, as in Phase 4).
+  in the stack yet, as in attendance).
 - **Fuel efficiency and cost reports** per vehicle. The logs hold
   everything needed.

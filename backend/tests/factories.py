@@ -78,7 +78,7 @@ def user_with_system_role(
 
 
 # ---------------------------------------------------------------------------
-# Phase 2
+# Students, parents, staff, admissions
 # ---------------------------------------------------------------------------
 def create_student(campus, student_number="S-001", **fields):
     """Through the service, so the first enrollment is opened like in real use."""
@@ -127,7 +127,7 @@ def create_admission(campus, application_number="A-001", **fields):
 
 
 # ---------------------------------------------------------------------------
-# Phase 3 — academics
+# academics
 # ---------------------------------------------------------------------------
 def create_program(organization, code="plus2-science", name="+2 Science", **fields):
     from modules.academics.models import Program
@@ -207,7 +207,7 @@ def create_term(academic_year, sequence=1, name=None, start=None, end=None):
 
 
 # ---------------------------------------------------------------------------
-# Phase 3b — timetable
+# timetable
 # ---------------------------------------------------------------------------
 def create_bell_schedule(campus, name="Day shift", **fields):
     from modules.timetable.models import BellSchedule
@@ -291,7 +291,7 @@ def create_lesson_change(entry, day, **fields):
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 — attendance
+# attendance
 # ---------------------------------------------------------------------------
 def create_attendance_session(section, day=None, entry=None, **fields):
     """Straight into the table, skipping the service's checks (mode, school

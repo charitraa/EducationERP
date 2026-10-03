@@ -132,7 +132,7 @@ class EventStatus(models.TextChoices):
 
 
 class AlumniEvent(OrganizationOwnedModel):
-    """A reunion, meetup or talk for alumni. Its own small model: Phase 7's
+    """A reunion, meetup or talk for alumni. Its own small model: the events module's
     events are for enrolled students and their attendance and points."""
 
     campus = models.ForeignKey("organizations.Campus", null=True, blank=True, on_delete=models.PROTECT,

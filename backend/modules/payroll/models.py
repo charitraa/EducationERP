@@ -1,6 +1,6 @@
 """Payroll: what each staff member is paid, and the monthly run that pays it.
 
-Kept apart from student finance (claude.md): nothing here touches invoices.
+Kept apart from student finance: nothing here touches invoices.
 
 * **PayComponent** — an allowance or a deduction (dearness allowance, PF,
   CIT, SSF), a fixed amount or a percentage of basic.
