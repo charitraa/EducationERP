@@ -50,6 +50,7 @@ class ReportCardTests(PublishedExamTestCase):
                          (80.0, 100.0, "A", 3.6, "pass"))
         self.assertEqual((card["percentage"], card["grade_point"], card["letter"], card["result"]),
                          (75.0, 3.4, "B+", "pass"))
+        self.assertEqual(card["result_id"], self.result_of(self.ram).pk)
         self.assertEqual((card["rank_in_section"], card["rank_in_level"], card["class_size"]), (1, 2, 2))
         self.assertEqual(card["grading"][0], {"from": 90.0, "letter": "A+", "grade_point": 4.0,
                                               "remark": "Outstanding", "pass": True})
@@ -141,6 +142,8 @@ class TranscriptTests(PublishedExamTestCase):
 
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual([x["title"] for x in r.data["records"]], ["First Terminal"])
+        self.assertEqual((r.data["records"][0]["result_id"], r.data["records"][0]["result"]),
+                         (self.result_of(self.ram).pk, "pass"))
         self.assertEqual(r.data["cumulative"], {"credits": 8.0, "credits_passed": 8.0, "gpa": 3.4})
 
     def test_credits_and_gpa_accumulate_across_results(self):

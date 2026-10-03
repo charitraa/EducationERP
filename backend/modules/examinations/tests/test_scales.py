@@ -31,6 +31,14 @@ class GradeScaleAPITests(ExamTestCase):
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual([d["name"] for d in response.data["divisions"]], ["First", "Second"])
 
+    def test_is_pass_can_be_left_out(self):
+        response = self.client.post(SCALES, {"name": "Short", "bands": [
+            {"min_percentage": 0, "letter": "F", "is_pass": False}, {"min_percentage": 40, "letter": "P"}]},
+            format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual([b["is_pass"] for b in response.data["bands"]], [True, False])
+
     def test_needs_bands_or_a_preset(self):
         self.assertEqual(self.client.post(SCALES, {"name": "Empty"}, format="json").status_code, 400)
 

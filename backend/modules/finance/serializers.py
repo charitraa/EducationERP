@@ -264,7 +264,7 @@ class AddInvoiceItemSerializer(serializers.Serializer):
                                                   allow_null=True)
 
     def validate_category(self, value):
-        if value.organization_id != target_organization_id(self):
+        if value is not None and value.organization_id != target_organization_id(self):
             raise serializers.ValidationError("Unknown category.")
         return value
 
@@ -301,7 +301,7 @@ class AssessLateFeesSerializer(serializers.Serializer):
                                                   allow_null=True)
 
     def validate_category(self, value):
-        if value.organization_id != target_organization_id(self):
+        if value is not None and value.organization_id != target_organization_id(self):
             raise serializers.ValidationError("Unknown category.")
         return value
 

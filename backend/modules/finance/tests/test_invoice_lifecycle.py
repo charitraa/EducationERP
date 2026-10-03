@@ -60,6 +60,16 @@ class AddItemTests(InvoiceLifecycleTestCase):
                                           "category": self.admission_fee.pk})
         self.assertEqual(r.data["category_name"], "Admission")
 
+    def test_an_explicit_null_category_means_none(self):
+        r = self.client.post(self.url(), {"kind": "fine", "description": "Library fine", "amount": "50",
+                                          "category": None}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertIsNone(r.data["category"])
+
+    def test_late_fees_take_an_explicit_null_category(self):
+        r = self.client.post(f"{INVOICES}assess-late-fees/", {"amount": "10", "category": None}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+
 
 class CancelTests(InvoiceLifecycleTestCase):
     def test_cancel_with_a_reason(self):

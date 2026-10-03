@@ -82,6 +82,8 @@ def validate_bands(bands: list[dict], divisions: list[dict]) -> list[str]:
         problems.append("Two grade bands start at the same percentage.")
     if ZERO not in minimums:
         problems.append("One grade band must start at 0%, or low marks have no grade.")
+    # ``is_pass`` is optional in the API: the model defaults it to a pass.
+    bands = [{"is_pass": True, **b} for b in bands]
     if not any(b["is_pass"] for b in bands):
         problems.append("At least one grade band must be a pass.")
     ordered = sorted(bands, key=lambda b: b["min_percentage"])

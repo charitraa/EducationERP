@@ -60,7 +60,7 @@ def report_card(result: Result) -> dict:
     class_size = Result.objects.filter(exam=result.exam, plan=result.plan, section=section).count()
     scale = grading.load_scale(source.grade_scale)
     return {
-        "result": result.pk,
+        "result_id": result.pk,
         "kind": "exam" if result.exam_id else "term",
         "title": source.name,
         "exam_type": result.exam.exam_type.name if result.exam_id else None,
@@ -119,7 +119,7 @@ def transcript(student) -> dict:
                 if line.status == "pass":
                     earned += line.credit_hours
         records.append({
-            "result": result.pk, "kind": "exam" if result.exam_id else "term", "title": source.name,
+            "result_id": result.pk, "kind": "exam" if result.exam_id else "term", "title": source.name,
             "academic_year": source.academic_year.name, "program": result.section.program.name,
             "level_label": result.section.program.level_label(result.section.level),
             "campus": result.section.campus.name, "subjects": lines, "percentage": num(result.percentage),
