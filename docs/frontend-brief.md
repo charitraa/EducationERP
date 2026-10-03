@@ -144,10 +144,29 @@ must hide everything they don't need.
   "branch" not "campus". Show every server `message` as-is: they are
   written for school staff.
 
-Signup: there is no self-signup yet. An organization is created on the
-server today (`manage.py bootstrap_organization`). A public **sign-up
-page** (school name, email, password, email verification) is the next
-backend step; design the page now and wire it when the endpoint lands.
+Signup and password reset (details in `docs/saas-2-signup.md`):
+
+- **Sign-up page.** First `GET /signup/config/`. If `enabled` is false,
+  hide the page. Otherwise show the CAPTCHA widget it names
+  (`captcha_provider`, with `captcha_site_key`). Fields: school name,
+  code (check it while typing with `GET /signup/check-code/?code=`, then
+  show "available", "taken" or "reserved"), type (`organization_types`),
+  your name, email, phone and password. Send the browser's time zone
+  (`Intl.DateTimeFormat().resolvedOptions().timeZone`). `POST /signup/`
+  answers 202: show "check your email" and a "send again" button
+  (`POST /signup/resend/`).
+- **Verify page** at the `SIGNUP_VERIFY_URL` path (`/signup/verify?token=`).
+  `POST /signup/verify/ {token}`. A 201 response holds `access`,
+  `refresh` and `user`, like login: store them and open the dashboard. A
+  202 means "waiting for approval". Errors: `expired_token` → offer
+  resend; `code_taken` → sign up again with another code.
+- **Forgot password** on the login page: `POST /auth/password-reset/
+  {email}` always answers 202. The **reset page** at `PASSWORD_RESET_URL`
+  (`/reset-password?uid=&token=`) posts
+  `/auth/password-reset/confirm/ {uid, token, new_password}`; a 204 means
+  done, so send them to log in.
+- The public admission form also sends `captcha_token` when
+  `captcha_provider` isn't `off`.
 
 ## 5. Menus by permission
 

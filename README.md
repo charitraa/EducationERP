@@ -4,7 +4,7 @@ A modular education ERP platform (student information system, academics,
 finance, HR and campus operations) built as a **modular monolith** on Django +
 Django REST Framework.
 
-**Status: Phase 14 complete — every roadmap phase is built.** Identity (Phase 1), the student foundation
+**Status: complete — every roadmap phase and the SaaS work are built.** Identity (Phase 1), the student foundation
 (Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
 academic years, sections, teaching assignments, student placement), the
 weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
@@ -25,9 +25,11 @@ leave, scholarship, hostel, transport, event and certificate requests,
 with public admission forms) and alumni and careers (Phase 14:
 graduation into alumni, self-service profiles, events, mentoring,
 donations, the school's own hiring from vacancy to contract, a job board,
-and private file uploads) are built and tested. The SaaS work has
-started: per-organization API keys are done
-([`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md)) — see
+and private file uploads) are built and tested. So is what lets anyone use it as a
+free service: per-organization API keys
+([`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md)) and public signup
+with email verification, CAPTCHA and password reset
+([`docs/saas-2-signup.md`](docs/saas-2-signup.md)). See
 [Roadmap](#roadmap).
 
 Building the UI? Read [`docs/frontend-brief.md`](docs/frontend-brief.md), with the
@@ -802,11 +804,18 @@ access token expires, `POST /auth/refresh/` returns a new one.
 `POST /auth/logout/` blocks the refresh token. Every login, failed login and
 logout is written to the audit log.
 
+**Forgot password:** `POST /auth/password-reset/` emails a link, and
+`POST /auth/password-reset/confirm/` sets the new password and signs the
+account out everywhere. **New organizations** can sign themselves up
+(`POST /signup/`, when `SIGNUP_ENABLED` is on): the organization is created
+once the emailed link is opened. See [`docs/saas-2-signup.md`](docs/saas-2-signup.md).
+
 ### Security
 
 | Protection | What it does | Setting |
 |---|---|---|
 | Login rate limit | 10 login attempts a minute per client address | `THROTTLE_LOGIN` |
+| Signup and reset | Off unless `SIGNUP_ENABLED`; a CAPTCHA (Turnstile, hCaptcha or reCAPTCHA) required in production; nothing created until the emailed link is opened; throwaway email domains refused; same answer whether or not an account exists; at most 5 mails an hour to one address | `SIGNUP_*`, `CAPTCHA_*`, `EMAILS_PER_ADDRESS_PER_HOUR` |
 | Account lockout | 5 failures on one account, from any address, lock it for 15 minutes. The right password is refused too. Unknown emails lock the same way, so nothing is revealed | `LOGIN_LOCKOUT_ATTEMPTS`, `LOGIN_LOCKOUT_MINUTES` |
 | API rate limit | 60 requests/min per address when logged out, 600/min per user when logged in. `/health/` and `/ready/` are exempt | `THROTTLE_ANON`, `THROTTLE_USER` |
 | Two-factor login | Optional authenticator-app codes, with 10 single-use recovery codes. Also asked for at `/admin/` | `/auth/2fa/…` endpoints below |
@@ -844,8 +853,9 @@ no more powerful than the admin).
 - **Numbers are typed in, not generated.** Student, employee and application
   numbers must be supplied; the API rejects duplicates. Automatic numbering
   can come once institutions agree on a format.
-- **Public admission forms have no CAPTCHA or email verification yet.**
-  A per-address throttle guards them until the SaaS signup work adds both.
+- **Public admission forms don't verify the applicant's email.** They
+  check a CAPTCHA once one is configured (`CAPTCHA_PROVIDER`), and a
+  per-address throttle applies.
 - **Two-factor is optional.** Nothing forces admins to turn it on yet. The
   authenticator secret is stored readable in the database, as TOTP needs it
   to check codes; encrypting it at rest would need a separate key.
@@ -1052,6 +1062,10 @@ POST   /api/v1/files/                      upload (multipart); GET files/  files
 
 GET    /api/v1/api-keys/                   CRUD (no delete); POST {id}/assign-role/  revoke-role/  rotate/  revoke/
 
+GET    /api/v1/signup/config/  signup/check-code/                   no login; POST signup/  signup/resend/  signup/verify/
+POST   /api/v1/auth/password-reset/  auth/password-reset/confirm/   no login
+GET    /api/v1/signup-requests/            platform admins; POST {id}/approve/  reject/
+
 GET    /health/                            liveness
 GET    /ready/                             readiness (checks the database and cache)
 GET    /api/schema/  /api/docs/  /api/redoc/   (staff-only unless API_DOCS_PUBLIC=True)
@@ -1183,7 +1197,7 @@ prod behave identically.
 
 ## Roadmap
 
-Phases 1 to 14 are done. The order below is the **dependency order**: each
+Phases 1 to 14 and the SaaS steps are done. The order below is the **dependency order**: each
 phase only needs the ones before it, so nothing has to be built on
 placeholders.
 
@@ -1205,14 +1219,18 @@ placeholders.
 | ~~13~~ | Applications (public admission forms and other workflows) | 2 |
 | ~~14~~ | Alumni and careers (uses the graduated status) | 2 |
 
-After the phases, to run this as a free self-signup service:
+After the phases, so anyone can use it as a free self-signup service:
 
 | Step | Scope | Status |
 |------|-------|--------|
 | ~~S1~~ | API keys per organization: own roles, read-only, expiry, address allowlist, own rate limit | Done — [`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md) |
-| S2 | Public signup with email verification and CAPTCHA | |
-| S3 | Per-organization throttles, quotas and module toggles | |
-| S4 | PostgreSQL row-level security in production | |
+| ~~S2~~ | Public signup with email verification and CAPTCHA, plus password reset | Done — [`docs/saas-2-signup.md`](docs/saas-2-signup.md) |
+
+Not planned: per-organization quotas, throttles and module toggles (the
+service is free, so there is nothing to meter; the global rate limits in
+[Security](#security) still apply), and PostgreSQL row-level security
+(tenant isolation is enforced in the application and covered by the
+tenant sweep tests).
 
 Also queued: bulk Excel import of paper records.
 
