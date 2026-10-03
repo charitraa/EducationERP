@@ -1,36 +1,15 @@
 # Education ERP — Backend
 
-A modular education ERP platform (student information system, academics,
-finance, HR and campus operations) built as a **modular monolith** on Django +
-Django REST Framework.
+**One system to run a school, +2 college or university**: students,
+classes, timetables, attendance, exams, fees, staff and payroll, library,
+hostel, transport, communication and alumni, all in one place. It is the
+backend: a REST API (Django + Django REST Framework) that a web or mobile
+app is built on.
 
-**Status: complete — every roadmap phase and the SaaS work are built.** Identity (Phase 1), the student foundation
-(Phase 2), the academic structure (Phase 3a: programs, subjects, curriculum,
-academic years, sections, teaching assignments, student placement), the
-weekly timetable with clash detection (Phase 3b), attendance (Phase 4:
-students, staff, QR and biometric devices), examinations (Phase 5: exams,
-grading, marks, results, report cards, transcripts), finance (Phase 6:
-fee structures, invoices, scholarships, payments, refunds), events
-(Phase 7: registration, attendance, participation, points, achievements,
-badges, titles), communication (Phase 8: notices, the central notification
-service, messaging, appointments, support tickets), the library
-(Phase 9: catalog, circulation, reservations, fines), inventory
-(Phase 10: stores, stock ledger, purchasing, assets, maintenance, disposal)
-HR and payroll (Phase 11: contracts, leave with quotas and approval,
-salary structures, tax slabs, monthly payroll runs and payslips) and
-hostel and transport (Phase 12: rooms and beds, allocation and check-in,
-complaints, vehicles, routes and stops, riders, per-trip boarding, term
-fees), applications (Phase 13: one approval engine for admission,
-leave, scholarship, hostel, transport, event and certificate requests,
-with public admission forms) and alumni and careers (Phase 14:
-graduation into alumni, self-service profiles, events, mentoring,
-donations, the school's own hiring from vacancy to contract, a job board,
-and private file uploads) are built and tested. So is what lets anyone use it as a
-free service: per-organization API keys
-([`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md)) and public signup
-with email verification, CAPTCHA and password reset
-([`docs/saas-2-signup.md`](docs/saas-2-signup.md)). See
-[Roadmap](#roadmap).
+It is **free to use**. A school signs itself up, verifies its email and
+starts working. Many schools share one server, and each one only ever sees
+its own data. A school with several branches runs them all from one
+account.
 
 Building the UI? Read [`docs/frontend-brief.md`](docs/frontend-brief.md), with the
 endpoint list in [`docs/api/`](docs/api/).
@@ -41,351 +20,161 @@ several branches.
 
 ---
 
-## What Phase 1 delivers
+## Who uses it
 
-| # | Item | Where |
-|---|------|-------|
-| 1 | Django project | `backend/config/` |
-| 2 | DRF | configured in `config/settings/base.py` |
-| 3 | Split settings | `config/settings/{base,development,production,test}.py` |
-| 4 | Custom user | `core/accounts/models.py` |
-| 5 | Organization | `core/organizations/models.py` |
-| 6 | Campus | `core/organizations/models.py` |
-| 7 | Roles | `core/permissions/models.py` |
-| 8 | Permissions | `core/permissions/{models,registry,selectors}.py` |
-| 9 | Authentication | `core/authentication/` (JWT, access + refresh) |
-| 10 | Audit log | `core/audit/` |
-| 11 | API versioning | `/api/v1/` via `config/api_v1.py` |
-| 12 | Testing setup | `tests/` |
-| 13 | API documentation | OpenAPI 3 at `/api/docs/` |
-
-## What Phase 2 delivers
-
-| Module | Models | What it does |
-|---|---|---|
-| `modules/students/` | `Student`, `Enrollment` | Student records; enrollment history; transfer between campuses; suspend / reactivate / graduate / withdraw |
-| `modules/parents/` | `Parent`, `StudentParent` | Parents and guardians, linked to students with a relationship and one primary contact |
-| `modules/staff/` | `StaffMember` | Staff directory: teaching / non-teaching, designation, joining and leaving |
-| `modules/admissions/` | `Admission` | Applications: pending → approved → enrolled (or rejected / withdrawn). Enrolling creates the student and guardian |
-
-Details, rules and design decisions: [`docs/phase-2.md`](docs/phase-2.md).
-
-## What Phase 3a delivers
-
-One model for schools (Grade 1–10), +2 colleges (Grade 11–12) and universities
-(Semester 1–8): a **program** has numbered levels, and a **section** is one
-class group at one level, for one academic year, at one campus.
-
-| Area | Models |
+| Person | What they do in it |
 |---|---|
-| Structure (organization-wide) | `Department`, `Program`, `Subject`, `CurriculumSubject`, `AcademicYear`, `Term` |
-| Classes (per campus) | `Room`, `Batch`, `Section`, `TeachingAssignment` |
-| Placement | `Enrollment.section`: every section a student has been in stays in their history |
+| Principal, office admin | Set up the school, its branches, classes, fees and staff; see everything |
+| Branch head | Run one branch: its students, staff, admissions and attendance |
+| Teacher | Take attendance, enter marks, see their own timetable, message parents |
+| Accountant | Bill fees, record payments, run payroll |
+| Librarian, storekeeper, warden, transport officer | Run the library, stores, hostel or buses |
+| Student | Their own timetable, attendance, results, fees, applications and library books |
+| Parent | The same for each of their children; messages and appointments with teachers |
+| Graduate | Their alumni profile, reunions, mentoring, donations and the job board |
+| Applicant (no account) | Apply for admission or a job online and follow the application |
 
-Year names are free text, so `2082/83` works; dates are stored in AD.
-Details: [`docs/phase-3.md`](docs/phase-3.md).
+What a person can do comes from the **roles** they are given, not from
+their job title. Each school can make its own roles.
 
-## What Phase 3b delivers
+## What it does
 
-| Module | Models | What it does |
-|---|---|---|
-| `modules/timetable/` | `BellSchedule`, `Period`, `TimetableEntry` | Each campus's bell times (several shifts allowed); the weekly timetable of teaching assignments, all year or per term |
+### Students and admissions
 
-A write that would double-book a **teacher** (at any campus), a **room** or a
-**section** is refused with `409 timetable_clash` and a list of what it hit.
-Overlap is by clock time, so a morning and a day shift are checked against
-each other. Elective subjects of one section may run in parallel.
+- Student records, parents and guardians, and the staff directory.
+- Admissions: apply (online, without an account, or at the office) →
+  approved → enrolled. Enrolling creates the student and their guardian.
+- Transfer between branches, suspend, graduate or withdraw. The full
+  history of every class a student has been in is kept.
 
-Also in Phase 3:
+### Classes and timetable
 
-- **Combined classes**: one teacher, several sections, one room.
-- **Hand-over**: move a teacher's lessons to another teacher in one call.
-- **Lesson changes**: substitutes, room changes and cancellations on a date,
-  and a day view with them applied.
-- **`/timetable/me/`**: the timetable for teachers, students and parents.
-- **Timetable generator**: fills the week from each assignment's
-  `periods_per_week`.
-- **Student electives**, and **whole-class promotion**.
-- **History stays true.** Moves, promotions, elective choices, lessons, bell
-  times and teacher hand-overs all take effect from a date, and the past is
-  never rewritten.
-- **Academic calendar**: holidays, closures, exam days, make-up days.
-- **Real-life guards**: teachers leaving with classes, substitutes on leave,
-  closed rooms, full classes and rooms, curriculum changes mid-year.
+- One shape for every kind of institution: a **program** (Grade 1–10,
+  +2 Science, BBA) has levels (grades or semesters), and a **section** is
+  one class group in one year at one branch. Year names are free text, so
+  `2082/83` works.
+- Subjects, curriculum, electives, rooms, class teachers and who teaches what.
+- A weekly **timetable** that refuses to double-book a teacher, a room or
+  a class, with an automatic generator, substitutes, room changes,
+  cancellations and combined classes.
+- An academic calendar: holidays, closures, exam days, make-up days.
+- Whole-class promotion to the next year.
 
-Details: [`docs/phase-3b.md`](docs/phase-3b.md) and [`docs/phase-3.md`](docs/phase-3.md).
-Every real-life situation checked:
-[`docs/phase-3-real-life.md`](docs/phase-3-real-life.md).
+### Attendance
 
-## What Phase 4 delivers
+- Students: a daily roll call (schools) or attendance in every lesson
+  (colleges), taken by the right teacher, including a substitute.
+- Staff: check-in and check-out by **biometric device** (ZKTeco or any
+  device through a generic API), a gate **QR code** or the office; late
+  arrivals and half days against each person's schedule.
+- QR attendance for students that is hard to cheat: codes expire in about a
+  minute, an optional location check, one phone per student.
+- Works offline: a teacher's app can sync later without counting twice.
+- Reports: percentage per student and subject, the class register, students
+  below 75%, classes not taken today.
 
-| Area | Models | What it does |
-|---|---|---|
-| Students | `AttendanceSession`, `AttendanceRecord`, `AttendanceCorrection` | A daily roll call (schools) or attendance in every lesson (colleges), set per program. Records point at the enrollment on that date; changes after submitting keep their history |
-| Staff | `WorkSchedule`, `Punch`, `StaffAttendanceDay` | Check-in and check-out from devices, a gate QR code or the office; late and half days against the schedule; days set by hand for leave or duty |
-| Devices | `AttendanceDevice`, `BiometricIdentity` | ZKTeco readers over their push protocol, and a generic device API for anything else. A device resending punches never counts them twice |
+### Exams and results
 
-- **One engine.** Teacher app, office, QR, biometric and API all go through
-  `modules/attendance/services.py`.
-- **The right teacher**: the day's teacher after substitutions, or the class
-  teacher for a roll call.
-- **QR that's hard to cheat**: codes expire in about a minute, an optional
-  location radius, one phone per student, and the student comes from the
-  login, never the request.
-- **Offline-safe**: a `client_key` per record makes a resent sync harmless.
-- **Reports**: a student's percentage overall and per subject, the class
-  register, defaulters below 75%, attendance not taken today, and staff
-  attendance.
+- Exams with theory, practical and internal parts, an exam timetable
+  checked for clashes, seat plans across rooms and invigilator duty.
+- Admit cards, withheld automatically below an attendance minimum.
+- Marks: teacher enters → submits → office verifies. Changing a mark
+  afterwards needs a reason and is kept on record.
+- Grading set by the school: percentage, letter grades, GPA, divisions,
+  pass/fail. Results with class rank, term results that combine several
+  exams, report cards and transcripts.
 
-Details: [`docs/phase-4.md`](docs/phase-4.md).
+### Fees
 
----
+- Fee structures per program, level and year: one-time (admission) and
+  per-term (tuition) items.
+- Invoices generated for a whole term in one step; scholarships applied
+  automatically; discounts, fines, late fees and installments.
+- Payments with numbered receipts, and refunds. Money that has moved is
+  never edited: a correction is a new entry.
+- Hostel and bus fees bill through the same system.
 
-## What Phase 5 delivers
+### Staff, HR and payroll
 
-| Area | Models | What it does |
-|---|---|---|
-| Grading | `GradeScale`, `GradeBand`, `DivisionBand` | Percentage → letter, grade point and pass/fail, per program or organization-wide; a preset table to start from |
-| Exams | `Exam`, `ExamType`, `ExamSubject`, `ExamComponent` | Draft → scheduled → published; papers with theory/practical/internal components, checked against the calendar and each other for clashes |
-| Seating | `ExamRoom`, `SeatAllocation`, `Invigilation` | A seat plan across rooms (interleaved or by class), and invigilator duty with no double-booking |
-| Admit cards | `AdmitCard` | One per candidate; withheld automatically below an attendance minimum, or by hand |
-| Marks | `MarkSheet`, `Mark`, `MarkCorrection` | Teacher enters → submits → office verifies; a change afterwards needs a reason and is kept as a correction |
-| Results | `Result`, `SubjectResult`, `ResultPlan` | Computed and stored per student; ranked within class and level; a term result combines several exams by weight |
+- Contracts, positions, staff documents with expiry dates.
+- Leave: yearly quotas per leave type, carry-forward, apply → approve.
+  Approved leave shows in staff attendance.
+- Salary structures (basic plus allowances and deductions), set per person
+  from a date.
+- Income tax from the school's own yearly slabs (Nepal's rules work, nothing
+  is hardcoded for one country), with PF, CIT and SSF.
+- Monthly payroll per branch from salary, leave and attendance (unpaid
+  days, overtime): draft → approved → paid, with payslips.
 
-- **One grading engine, no database.** `modules/examinations/grading.py` is
-  pure functions — percentages, bands, GPA, pass/fail — so the rules are
-  tested on their own and a recomputation always gives the same answer.
-- **The same shape as attendance.** A mark sheet opens idempotently, is taken
-  by the subject's own teacher, and locks at submission; a correction after
-  that needs a reason and is kept, exactly like `AttendanceCorrection`.
-- **Report cards and transcripts as data.** Everything to print — subjects,
-  grades, GPA, rank, attendance — comes back as JSON; turning it into a PDF
-  is a client's job, not the API's.
-- **Nothing is silently partial.** A subject with an unmarked component, or
-  an exam with an unverified sheet, is `incomplete` — it never gets a grade
-  by accident.
+### Communication
 
-Details: [`docs/phase-5.md`](docs/phase-5.md).
+- Notices for chosen groups (students, parents, staff, alumni) at one
+  branch or all of them.
+- In-app notifications, plus email, SMS and push, sent by every part of
+  the system (a payment received, results published, a book ready…).
+- Messages between staff and students or parents, appointment booking, and
+  support tickets.
 
----
+### Applications and certificates
 
-## What Phase 6 delivers
+- One online request system for admissions, leave, scholarships, hostel
+  beds, bus seats, event places, certificates and job applications.
+- Each kind of request has its own form and its own approval steps.
+  Approving it carries it out (the bed is reserved, the leave recorded, the
+  certificate issued); if that can't happen, nothing changes.
+- Certificates are numbered and can be revoked, never deleted.
 
-| Area | Models | What it does |
-|---|---|---|
-| Fee structure | `FeeCategory`, `FeeStructure`, `FeeStructureItem` | What a program's level costs, per academic year; one-time (admission) or per-term (tuition) items |
-| Scholarships | `Scholarship`, `StudentScholarship` | A standing %-or-flat reduction granted to a student, applied automatically whenever they're billed |
-| Invoices | `Invoice`, `InvoiceItem`, `Installment` | Generated per term (idempotent) or one-time; ad-hoc discounts, fines and adjustments; an optional due-dated schedule |
-| Payments | `Payment`, `Receipt`, `Refund` | Recorded against an invoice, numbered receipts; a refund reverses a payment without editing it |
+### Campus life
 
-- **One fee policy for the whole organization**, split by program, level and
-  year — the same shape as Phase 3a's curriculum and Phase 5's grade scales.
-- **Generated, not typed in by hand.** `generate-invoices` bills every
-  student currently placed in a matching class for a term; running it again
-  only bills whoever is new, the same idempotent pattern as admit cards.
-- **Money that's moved is history.** A refund is a new row, never an edit to
-  the payment it reverses — the same rule the audit log and exam
-  corrections already follow.
-- **Late fees are an explicit action**, not a background job: run it when
-  you decide to, and it never fines the same invoice twice.
+- **Events**: registration, check-in, participation and competition
+  results; points, badges, achievements and titles awarded by rules.
+- **Library**: catalog, copies on shelves, members, issue and return,
+  reservations queue, overdue and lost-book fines.
+- **Inventory**: stores at each branch, stock in and out, purchase orders
+  and deliveries, low-stock alerts, assets with tags, maintenance and
+  disposal.
+- **Hostel**: buildings, rooms and beds; reserve, check in, move and check
+  out; complaints.
+- **Transport**: vehicles and their papers, drivers, routes and stops,
+  riders; the bus crew marks each pickup and drop, and parents are told if
+  their child is absent.
 
-Details: [`docs/phase-6.md`](docs/phase-6.md).
+### Alumni and careers
 
----
+- Graduating students become alumni and keep their login: profile, jobs,
+  higher studies, an opt-in directory.
+- Reunions, mentoring, fundraising campaigns and donations with receipts.
+- The school's own hiring: vacancies, online applications, interviews,
+  offers. Accepting an offer creates the staff record and contract.
+- A job board of outside openings for students and alumni.
 
-## What Phase 7 delivers
+### For the school's IT and other software
 
-| Area | Models | What it does |
-|---|---|---|
-| Events | `EventCategory`, `Event` | Draft → published → cancelled; one campus or every campus; registration open, by approval, or none |
-| Registration | `EventRegistration` | Confirmed straight away, or decided by the organizer; an optional capacity closes it once full |
-| Attendance, participation | `EventAttendance`, `EventParticipation` | Its own simple check-in (never Phase 4's tables); a student's role and, for a competition, where they placed |
-| Points | `PointRule`, `PointEntry`, `StudentPoints` | Configurable rules award points automatically; a running total kept in step, like an invoice's paid amount |
-| Awards | `Award`, `AwardRule`, `StudentAward` | Achievements, badges and titles — one model, `kind` tells them apart — granted automatically by rule or by hand |
+- **Self-signup**: a school creates its own account online, with email
+  verification, CAPTCHA and forgot-password.
+- **API keys** so other programs (an SMS gateway, a website, a device) can
+  use the API with only the access they are given.
+- Two-factor login, account lockout, rate limits, and an audit log of every
+  change and every login.
+- Private file uploads (PDF, Word, images) that only the right people can
+  download.
 
-- **Never reaches into Attendance's tables.** `EventAttendance` is its own
-  model — claude.md calls that cross-module pattern out by name as one to
-  avoid.
-- **The organizer runs their own event**, the office runs any of them — the
-  same shape as a subject teacher marking their own class's exam (Phase 5).
-- **Rules, not a cron job.** A point rule fires, and an award rule is
-  checked, the moment the action behind it happens — never on a schedule.
-- **A ledger, not a computed sum.** Points are open-ended: nothing here
-  assumes events are their only source.
+## Built so that
 
-Details: [`docs/phase-7.md`](docs/phase-7.md).
+- **Schools never see each other's data.** Every request is limited to the
+  signed-in person's school, and an automated test attacks every endpoint
+  from another school to prove it.
+- **History is never rewritten.** Class moves, timetable changes, marks,
+  payments and payslips take effect from a date or are corrected with a new
+  entry, so last year's reports still come out the same.
+- **Nothing is silently half-done.** A mark sheet with missing marks gives
+  no grade; an approval that can't be carried out is refused.
+- **It fits real institutions.** Bikram Sambat year names, Nepali tax
+  slabs, morning and day shifts, several branches, schools and universities,
+  all as settings rather than code.
 
----
-
-## What Phase 8 delivers
-
-| Area | Models | What it does |
-|---|---|---|
-| Notifications | `Notification` | The one door in (`notify()`) every module calls; fans out to in-app + email/SMS/push |
-| Notices | `Notice` | Draft → published, filtered by audience and campus (or every campus) |
-| Messaging | `MessageThread`, `Message` | 1:1, staff-started; either side replies; closes and reopens |
-| Appointments | `AppointmentSlot`, `Appointment` | Staff publish availability; booking is race-safe, like a seat plan |
-| Support | `SupportTicket`, `TicketComment` | Anyone raises one; `open → in_progress → resolved → closed` |
-
-- **One notification service, not five.** `finance.record_payment`,
-  `examinations.publish_exam`, `events.register` and `attendance.submit`
-  all call the same `notify()` rather than writing their own delivery
-  logic — a rule lives in one place, matching claude.md's business-event
-  pipeline.
-- **Email/SMS/push are swappable stubs.** `integrations/{email,sms,push}/`
-  each log to the console today; a real provider drops in behind the same
-  `send()` later.
-
-Details: [`docs/phase-8.md`](docs/phase-8.md).
-
----
-
-## What Phase 9 delivers
-
-| Area | Models | What it does |
-|---|---|---|
-| Catalog | `Author`, `Category`, `Publisher`, `Book` | Shared across the organization; a book's authors are many-to-many |
-| Shelving | `Shelf`, `Copy` | One physical item of a book, at one campus, on one shelf |
-| Membership | `Member` | Wraps a `Student` or `StaffMember`, never a raw user; type-based defaults |
-| Circulation | `Issue`, `Fine` | `issued → returned \| lost`; overdue/lost/damaged raises a fine |
-| Reservations | `Reservation` | Queued FIFO while a book's fully out; the next return holds a copy for 3 days |
-
-- **Book vs. Copy is the exam-paper/mark-sheet split again.** One
-  describes what it is, the other is the thing actually in front of you.
-- **Return isn't its own model.** It's `Issue.status` moving to
-  `returned`, the same shape as a support ticket's or appointment's
-  status field.
-- **Two permissions, like exams' manage/mark split.** `library.manage`
-  runs the catalog and memberships; `library.circulate` is the front-desk
-  job — an institution can grant just the one.
-- **Reservations feed Phase 8's notification service**, not a bespoke
-  alert of their own — a copy held for you fires the same `notify()`
-  every other module uses.
-
-Details: [`docs/phase-9.md`](docs/phase-9.md).
-
----
-
-## What Phase 10 delivers
-
-| Area | Models | What it does |
-|---|---|---|
-| Catalog | `ItemCategory`, `Item`, `Supplier`, `Store` | An item is a *consumable* (counted) or an *asset* (tracked one by one); a store sits at one campus |
-| Stock | `StockLevel`, `StockMovement` | Quantity per (item, store), moved only by an append-only ledger that can't go below zero |
-| Movements | `StockIssue`, `StockTransfer` | Issue vouchers to staff or a department; transfers between stores at any campus; reasoned adjustments |
-| Purchasing | `PurchaseOrder`, `PurchaseLine` | `draft → ordered → partial → received`; deliveries in parts; cancel, or close short once part has arrived |
-| Assets | `Asset`, `AssetAssignment` | One tagged unit each; assigned to a staff member, student, room or department, with history; moved between stores |
-| Upkeep, end of life | `MaintenanceRecord`, `Disposal` | Scheduled → in progress → completed; disposal is final and keeps the asset in the register |
-
-- **Item vs. Asset is Book vs. Copy again.** One is the catalog entry,
-  the other the physical thing with its own tag and history.
-- **Stock is a ledger, not an edited number**, the same way
-  `Invoice.paid_amount` follows its payments. A mistake is a new,
-  reasoned adjustment.
-- **Three permissions, split by job.** `inventory.manage` for the office,
-  `inventory.stock` for the storekeeper, `inventory.view` to look.
-- **Low stock feeds Phase 8's `notify()`** once, when a store crosses
-  the item's reorder level. It is not a cron job.
-- **Nothing in use can be deleted** (409 `in_use`); deactivate it instead.
-
-Details: [`docs/phase-10.md`](docs/phase-10.md).
-
----
-
-## What Phase 11 delivers
-
-| Area | Models | What it does |
-|---|---|---|
-| Employment | `Position`, `Contract`, `EmployeeProfile`, `StaffDocument` | Extends Phase 2's `StaffMember`: contracts as history (end, then add), PAN/bank/tax status, documents with expiry |
-| Leave | `FiscalYear`, `LeaveType`, `LeaveBalance`, `LeaveRequest` | Yearly quotas (pro-rated for joiners), carry-forward, working days only; apply → approve/reject → cancel |
-| Pay | `PayComponent`, `SalaryStructure`, `StaffSalary` | Grades of basic + allowances/deductions (fixed or % of basic), assigned from a date with per-person overrides |
-| Tax | `TaxScheme`, `TaxSlab` | Per-organization yearly slabs for single/couple filers, rebate for women, cap on pre-tax PF/CIT/SSF |
-| Payroll | `PayrollRun`, `Payslip`, `PayrollAdjustment` | A campus's month computed from salary, leave and attendance (unpaid days, overtime); draft → approved (locked) → paid |
-
-- **Reuses what exists.** Departments are `academics.Department`, holidays
-  are the calendar's closures, attendance is Phase 4's staff days. Approved
-  leave is written there through the attendance service.
-- **Payroll reads, never writes, HR and attendance**, as claude.md asks.
-- **Nothing about one country is hardcoded.** Nepal's slabs, the rebate for
-  women and the PF/CIT cap are data. One-off pay (a bonus, arrears,
-  overtime) is taxed at the marginal rate instead of being projected ×12.
-- **Corrections are new rows.** An approved payslip is never edited; an
-  adjustment that `corrects` it lands on the next one.
-- **Salaries are sensitive.** `campus-admin` gets HR but no payroll; an
-  organization grants payroll through its own role.
-
-Details: [`docs/phase-11.md`](docs/phase-11.md).
-
----
-
-## What Phase 12 delivers
-
-| Area | Models | What it does |
-|---|---|---|
-| Hostel register | `Building`, `Floor`, `HostelRoom`, `Bed`, `RoomType` | Boys / girls / mixed buildings per campus; per-bed, per-term fee on the room type |
-| Stays | `Allocation` | One bed per person (student or staff): reserve → check in → check out, cancel, room move; history, never edited |
-| Complaints | `Complaint` | Residents file from their own bed; warden notified; assign → resolve / reject |
-| Fleet | `Vehicle`, `VehicleDocument`, `Driver`, `Maintenance`, `FuelLog` | Seats, papers with expiry, crew with licences, service and fuel logs |
-| Routes and riders | `Route`, `Stop`, `Assignment` | Ordered stops with times and optional own fee; riders both ways or one way; refused when the bus is full |
-| Trips | `Trip`, `TripRecord` | The route's own crew opens and marks each pickup / drop; parents told about an absence; office corrects after completion |
-
-- **Fees are their own invoices.** Each term, hostel and transport bill
-  through finance (`Invoice.source` = `hostel` / `transport`), prorated by
-  days, safe to rerun, never blocking tuition. Only scholarships aimed at
-  that fee category apply.
-- **No double booking.** Bed and route rows are locked while allocating,
-  with partial unique constraints behind them. Concurrent requests for the
-  last bed or seat were checked live.
-- **Bus attendance is separate** from Phase 4's class attendance, as
-  claude.md asks of events.
-
-Details: [`docs/phase-12.md`](docs/phase-12.md).
-
----
-
-## What Phase 13 delivers
-
-| Area | Models | What it does |
-|---|---|---|
-| Forms | `ApplicationType`, `ApprovalStep` | Per kind, per campus or every campus; extra questions; an ordered chain of steps, each decided by holders of a permission |
-| Requests | `Application`, `ApplicationEvent` | Submit → each step approves, rejects (with a reason) or sends back → resubmit; withdraw while open; full history |
-| Certificates | `Certificate` | Numbered, contents frozen at issue, revoked never deleted |
-| Public admission | — | No account: apply, check, fix and withdraw with a reference and secret token; throttled per address |
-
-- **Approval carries the request out** through the owning module's
-  service: an admission approved, a leave approved, a scholarship granted,
-  a bed reserved, a seat assigned, an event place confirmed, a certificate
-  issued. If that fails (bed taken, bus full) the approval is refused and
-  nothing changes.
-- **Nobody decides their own application** or their child's.
-- **Applicants are told** at every decision through Phase 8's
-  notifications, and public applicants by email or SMS.
-
-Details: [`docs/phase-13.md`](docs/phase-13.md).
-
----
-
-## What Phase 14 delivers
-
-| Area | Models | What it does |
-|---|---|---|
-| Alumni | `AlumniProfile`, `Employment`, `HigherStudy`, `Achievement` | Made on graduation (what they finished is copied); the graduate keeps their own profile and history; opt-in directory |
-| Alumni life | `AlumniEvent`, `Rsvp`, `Mentorship` | Reunions with capacity and guests; graduates mentor students and younger alumni, with a capacity |
-| Giving | `Campaign`, `Donation`, `DonationRefund` | Numbered receipts, refunds as new rows, totals kept under locks |
-| Own hiring | `Vacancy`, `Candidacy`, `Interview`, `JobOffer` | Public or signed-in applications through the Phase 13 engine, screening, panel interviews, offers; approval with an accepted offer creates the staff member and HR contract |
-| Job board | `JobPosting` | Outside openings for students and/or alumni; alumni post, the office approves |
-| Files | `StoredFile` (`core/files`) | Private uploads: type from the bytes, size limit, generated names, download only after the owning module's access check |
-
-- **Graduation is an event.** The students module sends
-  `student_graduated`; alumni listens. The login stays and becomes an
-  alumni login, with its own notice audience.
-- **Hiring can't half-happen.** It's the job application's final
-  approval: no accepted offer, a filled vacancy or a taken employee number
-  refuses it and nothing is created.
-- **Uploads are private.** They're kept outside the public media folder,
-  served as attachments only, and limited to PDF, Word and images.
-
-Details: [`docs/phase-14.md`](docs/phase-14.md).
+Every area has a detailed document (data model, rules and the decisions
+behind them) in [`docs/`](docs/): see [Detailed documentation](#detailed-documentation).
 
 ---
 
@@ -459,7 +248,7 @@ Send the access token as `Authorization: Bearer <access>`.
 
 ```bash
 cd backend
-python manage.py test          # 653 tests, in-memory SQLite
+python manage.py test          # in-memory SQLite
 ```
 
 `manage.py test` selects `config.settings.test` automatically.
@@ -576,8 +365,7 @@ Organization  (one school / college)
   admissions and attendance), `staff` (read-only basics, plus taking
   attendance for their own classes), and `student` and `parent`. These
   last two carry no permissions: students and parents reach their own records
-  through `/students/me/` and `/parents/me/`, and more comes with later
-  phases. Each organization can also create its own roles.
+  through `/students/me/` and `/parents/me/` and the other `/me/` endpoints. Each organization can also create its own roles.
 - **UserRole**: gives a role to a user, either for the whole organization or
   for one campus, optionally with an expiry date.
 - **AuditLog**: who did it, what they did, what changed (old → new), IP address
@@ -1084,7 +872,7 @@ Every error uses one envelope:
 ```
 backend/
 ├── config/            project settings, URLs, API version routing
-├── core/              Phase 1 — the identity foundation
+├── core/              the identity foundation
 │   ├── common/        abstract models, permissions, mixins, pagination, errors
 │   ├── organizations/ Organization, Campus
 │   ├── accounts/      User + user services
@@ -1093,7 +881,7 @@ backend/
 │   ├── audit/         AuditLog, context middleware, audit services
 │   ├── api_keys/      ApiKey: integration identities with roles, Api-Key auth
 │   └── files/         StoredFile: private uploads, type checks, access registry
-├── modules/           business modules, Phase 2 onward
+├── modules/           business modules
 │   ├── students/      Student, Enrollment
 │   ├── parents/       Parent, StudentParent
 │   ├── staff/         StaffMember
@@ -1130,9 +918,9 @@ backend/
 │   │                  AlumniEvent, Rsvp, Mentorship, Campaign, Donation
 │   └── careers/       Vacancy, Candidacy, Interview, JobOffer, JobPosting
 ├── integrations/
-│   ├── biometric/     ZKTeco and generic device adapters (Phase 4)
+│   ├── biometric/     ZKTeco and generic device adapters
 │   ├── email/  sms/  push/  console-logging stubs; notifications.services.notify
-│   │                  is the only caller (Phase 8)
+│   │                  is the only caller
 │   └── payment/       (empty — a real gateway is a later decision)
 └── tests/             shared factories, base test case, cross-cutting tests
 ```
@@ -1143,7 +931,7 @@ Each app follows the same layout: `models` → `serializers` → `services`
 ### Five decisions worth knowing
 
 **1. One identity, many profiles.** Students, parents, teachers and staff all
-authenticate through a single `User`. Phase 2's `Student`, `Parent` and
+authenticate through a single `User`. The `Student`, `Parent` and
 `StaffMember` records each point back at one optional `User` (a young
 student may have no login) — never a second login system. `user_type` is a
 broad label; access always comes from roles.
@@ -1176,7 +964,7 @@ at object level as defence in depth.
 `Model.objects` hides deleted rows while `Model.all_objects` shows them. Unique
 constraints are partial (`condition=Q(deleted_at__isnull=True)`), so deleting a
 campus frees its code. `AuditLog` is deliberately *not* a `BaseModel`: it
-rejects any update. Financial corrections in later phases must be adjustments
+rejects any update. Financial corrections must be adjustments
 or reversals, never edits.
 
 **5. Services and selectors, not fat views.** Business rules live in
@@ -1195,50 +983,27 @@ prod behave identically.
 
 ---
 
-## Roadmap
+## Detailed documentation
 
-Phases 1 to 14 and the SaaS steps are done. The order below is the **dependency order**: each
-phase only needs the ones before it, so nothing has to be built on
-placeholders.
+| Area | Document |
+|---|---|
+| Organizations, campuses, users, roles, permissions, audit log | [`docs/phase-1.md`](docs/phase-1.md) |
+| Students, parents, staff, admissions | [`docs/phase-2.md`](docs/phase-2.md) |
+| Programs, subjects, classes, calendar | [`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3-real-life.md`](docs/phase-3-real-life.md) |
+| Timetable | [`docs/phase-3b.md`](docs/phase-3b.md) |
+| Attendance and devices | [`docs/phase-4.md`](docs/phase-4.md) |
+| Exams and results | [`docs/phase-5.md`](docs/phase-5.md) |
+| Fees | [`docs/phase-6.md`](docs/phase-6.md) |
+| Events and points | [`docs/phase-7.md`](docs/phase-7.md) |
+| Notices, notifications, messages, support | [`docs/phase-8.md`](docs/phase-8.md) |
+| Library | [`docs/phase-9.md`](docs/phase-9.md) |
+| Inventory | [`docs/phase-10.md`](docs/phase-10.md) |
+| HR and payroll | [`docs/phase-11.md`](docs/phase-11.md) |
+| Hostel and transport | [`docs/phase-12.md`](docs/phase-12.md) |
+| Applications and certificates | [`docs/phase-13.md`](docs/phase-13.md) |
+| Alumni, careers, file uploads | [`docs/phase-14.md`](docs/phase-14.md) |
+| API keys | [`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md) |
+| Signup and password reset | [`docs/saas-2-signup.md`](docs/saas-2-signup.md) |
+| Building a frontend | [`docs/frontend-brief.md`](docs/frontend-brief.md), [`docs/api/`](docs/api/) |
 
-| Phase | Scope | Needs |
-|-------|-------|-------|
-| ~~1~~ | Identity: organizations, campuses, users, roles, permissions, audit | — |
-| ~~2~~ | Students, parents, staff, admissions, enrollment | 1 |
-| ~~3a~~ | Academics: departments, programs, subjects, curriculum, years, terms, batches, sections, rooms, teaching assignments, placement | 2 (teachers, enrollment) |
-| ~~3b~~ | Timetable: periods, weekly schedule, clash detection | 3a |
-| ~~4~~ | Attendance: daily roll calls and lesson attendance, staff check-in, QR, ZKTeco and generic devices, reports | 3 (dated enrollments, versioned timetable, calendar) |
-| ~~5~~ | Examinations: exams, marks, grades, results, report cards, transcripts | 3 (subjects, syllabus) |
-| ~~6~~ | Finance: fee structures, invoices, payments, scholarships, refunds | 2 and 3 (fees per program) |
-| ~~7~~ | Events and student points | 2 |
-| ~~8~~ | Communication: notices, notifications, support tickets | 2 |
-| ~~9~~ | Library | 2 |
-| ~~10~~ | Inventory | 2 |
-| ~~11~~ | HR and payroll (extends `StaffMember`) | 2 |
-| ~~12~~ | Hostel and transport | 2, 6 |
-| ~~13~~ | Applications (public admission forms and other workflows) | 2 |
-| ~~14~~ | Alumni and careers (uses the graduated status) | 2 |
-
-After the phases, so anyone can use it as a free self-signup service:
-
-| Step | Scope | Status |
-|------|-------|--------|
-| ~~S1~~ | API keys per organization: own roles, read-only, expiry, address allowlist, own rate limit | Done — [`docs/saas-1-api-keys.md`](docs/saas-1-api-keys.md) |
-| ~~S2~~ | Public signup with email verification and CAPTCHA, plus password reset | Done — [`docs/saas-2-signup.md`](docs/saas-2-signup.md) |
-
-Not planned: per-organization quotas, throttles and module toggles (the
-service is free, so there is nothing to meter; the global rate limits in
-[Security](#security) still apply), and PostgreSQL row-level security
-(tenant isolation is enforced in the application and covered by the
-tenant sweep tests).
-
-Also queued: bulk Excel import of paper records.
-
-See [`docs/phase-1.md`](docs/phase-1.md), [`docs/phase-2.md`](docs/phase-2.md),
-[`docs/phase-3.md`](docs/phase-3.md), [`docs/phase-3b.md`](docs/phase-3b.md),
-[`docs/phase-4.md`](docs/phase-4.md), [`docs/phase-5.md`](docs/phase-5.md),
-[`docs/phase-6.md`](docs/phase-6.md), [`docs/phase-7.md`](docs/phase-7.md),
-[`docs/phase-8.md`](docs/phase-8.md), [`docs/phase-9.md`](docs/phase-9.md), [`docs/phase-10.md`](docs/phase-10.md), [`docs/phase-11.md`](docs/phase-11.md),
-[`docs/phase-12.md`](docs/phase-12.md), [`docs/phase-13.md`](docs/phase-13.md) and
-[`docs/phase-14.md`](docs/phase-14.md) for the data model and the
-conventions every module follows.
+Not built yet: bulk import of existing paper or Excel records.
